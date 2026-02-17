@@ -372,7 +372,7 @@ function ProductPanel({ product }: { product: Product }) {
       </div>
 
       {/* Collapsible sections */}
-      {product.features.length > 0 && (
+      {(product.features || []).length > 0 && (
         <CollapsibleSection
           title="Features"
           icon={<Sparkles className="h-3.5 w-3.5" />}
@@ -380,7 +380,7 @@ function ProductPanel({ product }: { product: Product }) {
           onToggle={() => toggle("features")}
         >
           <ul className="space-y-1">
-            {product.features.map((f, i) => (
+            {(product.features || []).map((f, i) => (
               <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
                 <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-indigo-400 shrink-0" />
                 {f}
@@ -390,7 +390,7 @@ function ProductPanel({ product }: { product: Product }) {
         </CollapsibleSection>
       )}
 
-      {product.marketing_angles.length > 0 && (
+      {(product.marketing_angles || []).length > 0 && (
         <CollapsibleSection
           title="Marketing Angles"
           icon={<Sparkles className="h-3.5 w-3.5" />}
@@ -398,7 +398,7 @@ function ProductPanel({ product }: { product: Product }) {
           onToggle={() => toggle("marketing")}
         >
           <ul className="space-y-1">
-            {product.marketing_angles.map((a, i) => (
+            {(product.marketing_angles || []).map((a, i) => (
               <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
                 <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-violet-400 shrink-0" />
                 {a}
@@ -408,21 +408,28 @@ function ProductPanel({ product }: { product: Product }) {
         </CollapsibleSection>
       )}
 
-      {product.technical_specs.length > 0 && (
+      {(product.technical_specs || []).length > 0 && (
         <CollapsibleSection
           title="Technical Specs"
           icon={<Wrench className="h-3.5 w-3.5" />}
           open={openSections.specs}
           onToggle={() => toggle("specs")}
         >
-          <ul className="space-y-1">
-            {product.technical_specs.map((s, i) => (
-              <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
-                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
-                {s}
-              </li>
+          <div className="space-y-3">
+            {(product.technical_specs || []).map((spec, i) => (
+              <div key={i}>
+                <div className="text-sm font-medium text-[hsl(var(--th-text))] mb-1">{spec.name}</div>
+                <ul className="space-y-0.5 pl-3">
+                  {(spec.terms || []).map((term, j) => (
+                    <li key={j} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      {term}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         </CollapsibleSection>
       )}
     </div>

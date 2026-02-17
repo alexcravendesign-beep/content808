@@ -2,6 +2,11 @@ const BASE = '/product-api/api/v1';
 
 /* ── Types ── */
 
+export interface TechnicalSpec {
+    name: string;
+    terms: string[];
+}
+
 export interface Product {
     id: string;
     name: string;
@@ -16,7 +21,7 @@ export interface Product {
     dna_confidence: string | null;
     features: string[];
     marketing_angles: string[];
-    technical_specs: string[];
+    technical_specs: TechnicalSpec[];
 }
 
 export interface ProductSearchParams {
