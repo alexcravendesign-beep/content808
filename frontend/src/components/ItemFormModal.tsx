@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { api, ContentItem } from "@/api/client";
+import { Product } from "@/api/productApi";
+import { ProductPicker, SelectedProduct } from "@/components/ProductPicker";
 import { useToast } from "@/components/ui/toast";
 
 interface ItemFormModalProps {
@@ -20,6 +22,7 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
     product_url: "",
     product_title: "",
     product_image_url: "",
+    product_id: null as string | null,
     campaign_goal: "",
     direction: "",
     pivot_notes: "",
@@ -36,6 +39,7 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
         product_url: item.product_url || "",
         product_title: item.product_title || "",
         product_image_url: item.product_image_url || "",
+        product_id: item.product_id || null,
         campaign_goal: item.campaign_goal || "",
         direction: item.direction || "",
         pivot_notes: item.pivot_notes || "",
@@ -45,11 +49,48 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
         assignee: item.assignee || "",
       });
     } else {
-      setForm({ brand: "", product_url: "", product_title: "", product_image_url: "", campaign_goal: "", direction: "", pivot_notes: "", platform: "", due_date: "", publish_date: "", assignee: "" });
+      setForm({
+        brand: "", product_url: "", product_title: "", product_image_url: "",
+        product_id: null, campaign_goal: "", direction: "", pivot_notes: "",
+        platform: "", due_date: "", publish_date: "", assignee: "",
+      });
     }
   }, [item, open]);
 
-  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+  const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  /** When a product is selected from the picker */
+  const handleProductSelect = (product: Product | null) => {
+    if (product) {
+      setForm((prev) => ({
+        ...prev,
+        product_id: product.id,
+        product_title: product.name,
+        product_image_url: product.thumbnail || "",
+        product_url: product.source_url || "",
+        brand: product.brand || prev.brand,
+      }));
+    } else {
+      setForm((prev) => ({
+        ...prev,
+        product_id: null,
+        product_title: "",
+        product_image_url: "",
+        product_url: "",
+      }));
+    }
+  };
+
+  /** Build the selected-product preview from current form state */
+  const selectedProduct: SelectedProduct | null = form.product_id
+    ? {
+      product_id: form.product_id,
+      product_title: form.product_title,
+      product_image_url: form.product_image_url,
+      product_url: form.product_url,
+      brand: form.brand,
+    }
+    : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,26 +130,16 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
           <DialogTitle>{item ? "Edit Item" : "Create New Item"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Brand *" value={form.brand} onChange={(v) => set("brand", v)} placeholder="Brand name" />
+          {/* Product Picker — replaces manual product fields */}
+          <ProductPicker selected={selectedProduct} onSelect={handleProductSelect} />
 
-          {/* Product fields */}
-          <div className="p-3 rounded-lg bg-[hsl(var(--th-input)/0.4)] border border-[hsl(var(--th-border)/0.4)] space-y-3">
-            <div className="text-[10px] font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider">Product Info</div>
-            <Field label="Product Title" value={form.product_title} onChange={(v) => set("product_title", v)} placeholder="Product name or title" />
-            <Field label="Product Image URL" value={form.product_image_url} onChange={(v) => set("product_image_url", v)} placeholder="https://...image.jpg" />
-            {form.product_image_url && (
-              <div className="flex items-center gap-3">
-                <img
-                  src={form.product_image_url}
-                  alt="Preview"
-                  className="h-12 w-12 rounded-lg object-cover border border-[hsl(var(--th-border))]"
-                  onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
-                />
-                <span className="text-[10px] text-[hsl(var(--th-text-muted))]">Image preview</span>
-              </div>
-            )}
-            <Field label="Product URL" value={form.product_url} onChange={(v) => set("product_url", v)} placeholder="https://..." />
-          </div>
+          {/* Brand — editable, but auto-filled by product selection */}
+          <Field
+            label={form.product_id ? "Brand (from product)" : "Brand *"}
+            value={form.brand}
+            onChange={(v) => set("brand", v)}
+            placeholder="Brand name"
+          />
 
           <Field label="Campaign Goal" value={form.campaign_goal} onChange={(v) => set("campaign_goal", v)} placeholder="What's the goal?" multiline />
           <Field label="Direction" value={form.direction} onChange={(v) => set("direction", v)} placeholder="Creative direction" multiline />

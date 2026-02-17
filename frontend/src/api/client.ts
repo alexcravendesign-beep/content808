@@ -80,6 +80,7 @@ export interface ContentItem {
   product_url: string;
   product_title: string;
   product_image_url: string;
+  product_id: string | null;
   campaign_goal: string;
   direction: string;
   pivot_notes: string;

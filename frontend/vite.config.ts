@@ -9,5 +9,14 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      '/product-api': {
+        target: 'http://192.168.1.137:54100',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/product-api/, ''),
+      },
+    },
+  },
 })
 

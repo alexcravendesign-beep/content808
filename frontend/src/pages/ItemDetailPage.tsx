@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, ContentItem, ContentComment, AuditEntry, ContentItemOutput } from "@/api/client";
+import { productApi, Product } from "@/api/productApi";
+import { PriceTag } from "@/components/PriceTag";
 import { Badge } from "@/components/ui/badge";
 import { ItemFormModal } from "@/components/ItemFormModal";
 import { useToast } from "@/components/ui/toast";
 import {
   ArrowLeft, Edit, Trash2, ExternalLink, User, Calendar, Send,
-  ChevronRight, Clock, FileText, MessageSquare, Activity, Zap
+  ChevronRight, Clock, FileText, MessageSquare, Activity, Zap,
+  Package, Sparkles, Wrench, ChevronDown
 } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
@@ -35,6 +38,7 @@ export function ItemDetailPage() {
   const [transitionModal, setTransitionModal] = useState<{ open: boolean; to: string }>({ open: false, to: "" });
   const [transitionReason, setTransitionReason] = useState("");
   const [loading, setLoading] = useState(true);
+  const [product, setProduct] = useState<Product | null>(null);
 
   const fetchItem = useCallback(async () => {
     if (!id) return;
@@ -57,6 +61,14 @@ export function ItemDetailPage() {
   }, [id, toast]);
 
   useEffect(() => { fetchItem(); }, [fetchItem]);
+
+  // Fetch product details from product API when item has a product title
+  useEffect(() => {
+    if (!item?.product_title) { setProduct(null); return; }
+    productApi.searchProducts({ q: item.product_title, limit: 1 })
+      .then((res) => setProduct(res.items[0] || null))
+      .catch(() => setProduct(null));
+  }, [item?.product_title]);
 
   const handleTransition = async () => {
     if (!item || !transitionModal.to) return;
@@ -167,6 +179,9 @@ export function ItemDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Product Details Panel */}
+      {product && <ProductPanel product={product} />}
 
       <div className="bg-[hsl(var(--th-surface))] border border-[hsl(var(--th-border))] rounded-lg">
         <div className="flex border-b border-[hsl(var(--th-border))]">
@@ -299,6 +314,138 @@ function InfoField({ icon: Icon, label, value }: { icon: React.ElementType; labe
         <Icon className="h-3 w-3" />{label}
       </div>
       <div className="text-sm text-[hsl(var(--th-text-secondary))]">{value}</div>
+    </div>
+  );
+}
+
+/* ── Product Details Panel ── */
+
+function ProductPanel({ product }: { product: Product }) {
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    features: true, marketing: false, specs: false,
+  });
+
+  const toggle = (key: string) =>
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  return (
+    <div className="bg-[hsl(var(--th-surface))] border border-[hsl(var(--th-border))] rounded-lg p-6 mb-4">
+      <h2 className="text-xs font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider mb-4 flex items-center gap-1.5">
+        <Package className="h-3.5 w-3.5" /> Product Details
+      </h2>
+
+      <div className="flex items-start gap-4 mb-4">
+        {product.thumbnail ? (
+          <img
+            src={product.thumbnail}
+            alt={product.name}
+            className="h-20 w-20 rounded-xl object-cover border border-[hsl(var(--th-border))]"
+          />
+        ) : (
+          <div className="h-20 w-20 rounded-xl bg-gradient-to-br from-indigo-600/30 to-violet-600/30 flex items-center justify-center border border-indigo-500/20">
+            <Package className="h-8 w-8 text-indigo-300" />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-lg font-semibold text-[hsl(var(--th-text))] mb-1">{product.name}</h3>
+          <div className="flex items-center gap-2 text-sm text-[hsl(var(--th-text-secondary))] mb-2">
+            <span>{product.brand}</span>
+            {product.category && (
+              <>
+                <span className="text-[hsl(var(--th-text-muted))]">·</span>
+                <span>{product.category}</span>
+              </>
+            )}
+          </div>
+          <PriceTag product={product} size="md" />
+        </div>
+        {product.source_url && (
+          <a
+            href={product.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 shrink-0"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> View Source
+          </a>
+        )}
+      </div>
+
+      {/* Collapsible sections */}
+      {product.features.length > 0 && (
+        <CollapsibleSection
+          title="Features"
+          icon={<Sparkles className="h-3.5 w-3.5" />}
+          open={openSections.features}
+          onToggle={() => toggle("features")}
+        >
+          <ul className="space-y-1">
+            {product.features.map((f, i) => (
+              <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-indigo-400 shrink-0" />
+                {f}
+              </li>
+            ))}
+          </ul>
+        </CollapsibleSection>
+      )}
+
+      {product.marketing_angles.length > 0 && (
+        <CollapsibleSection
+          title="Marketing Angles"
+          icon={<Sparkles className="h-3.5 w-3.5" />}
+          open={openSections.marketing}
+          onToggle={() => toggle("marketing")}
+        >
+          <ul className="space-y-1">
+            {product.marketing_angles.map((a, i) => (
+              <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-violet-400 shrink-0" />
+                {a}
+              </li>
+            ))}
+          </ul>
+        </CollapsibleSection>
+      )}
+
+      {product.technical_specs.length > 0 && (
+        <CollapsibleSection
+          title="Technical Specs"
+          icon={<Wrench className="h-3.5 w-3.5" />}
+          open={openSections.specs}
+          onToggle={() => toggle("specs")}
+        >
+          <ul className="space-y-1">
+            {product.technical_specs.map((s, i) => (
+              <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                {s}
+              </li>
+            ))}
+          </ul>
+        </CollapsibleSection>
+      )}
+    </div>
+  );
+}
+
+function CollapsibleSection({
+  title, icon, open, onToggle, children,
+}: {
+  title: string; icon: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
+  return (
+    <div className="border-t border-[hsl(var(--th-border)/0.5)] pt-3 mt-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 text-xs font-semibold text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] transition-colors"
+      >
+        {icon}
+        <span className="uppercase tracking-wider">{title}</span>
+        <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="mt-2">{children}</div>}
     </div>
   );
 }
