@@ -24,6 +24,19 @@
     --border: 216 34% 17%;
     --input: 216 34% 17%;
     --ring: 216 34% 17%;
+
+    /* Gradient accent palette */
+    --gradient-start: 238 84% 67%;
+    --gradient-mid: 270 76% 58%;
+    --gradient-end: 190 95% 52%;
+    --glass-bg: rgba(15, 15, 25, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.06);
+    --glow-indigo: rgba(99, 102, 241, 0.15);
+    --glow-cyan: rgba(6, 182, 212, 0.12);
+
+    /* Sidebar */
+    --sidebar-width: 240px;
+    --sidebar-collapsed: 64px;
   }
 
   * {
@@ -34,9 +47,21 @@
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsl(216 34% 22%);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: hsl(216 34% 30%); }
+
+/* ── Status Colors ── */
 .status-idea { background-color: #6366f1; }
 .status-draft { background-color: #8b5cf6; }
 .status-review { background-color: #f59e0b; }
@@ -45,3 +70,143 @@
 .status-scheduled { background-color: #3b82f6; }
 .status-published { background-color: #06b6d4; }
 
+/* ── Keyframe Animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pulseRing {
+  0%   { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  70%  { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
+
+@keyframes subtleFloat {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-2px); }
+}
+
+/* ── Animation Utilities ── */
+.animate-fadeIn     { animation: fadeIn 0.25s ease-out; }
+.animate-slideInLeft { animation: slideInLeft 0.3s ease-out; }
+.animate-slideInUp  { animation: slideInUp 0.3s ease-out; }
+.animate-slideInDown { animation: slideInDown 0.25s ease-out; }
+.animate-scaleIn    { animation: scaleIn 0.2s ease-out; }
+.animate-pulseRing  { animation: pulseRing 2s infinite; }
+.animate-float      { animation: subtleFloat 3s ease-in-out infinite; }
+
+/* ── Shimmer Skeleton ── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(223 47% 11%) 25%,
+    hsl(223 47% 15%) 50%,
+    hsl(223 47% 11%) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* ── Glass Panel ── */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-border);
+}
+
+/* ── Gradient Utilities ── */
+.gradient-border {
+  position: relative;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, hsl(var(--gradient-start)), hsl(var(--gradient-end)));
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+}
+
+.glow-hover {
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+.glow-hover:hover {
+  box-shadow: 0 0 20px var(--glow-indigo), 0 0 40px var(--glow-cyan);
+  transform: translateY(-1px);
+}
+
+/* ── Calendar-specific ── */
+.calendar-cell-hover {
+  transition: background-color 0.15s ease;
+}
+.calendar-cell-hover:hover {
+  background-color: hsl(223 47% 11% / 0.6);
+}
+
+.calendar-item {
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+.calendar-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.calendar-item-drag {
+  opacity: 0.6;
+  transform: scale(1.02);
+}
+
+.today-indicator {
+  position: relative;
+}
+.today-indicator::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #6366f1;
+  animation: pulseRing 2s infinite;
+}
+
+/* ── Sidebar Transition ── */
+.sidebar-transition {
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

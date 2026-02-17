@@ -1,65 +1,108 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 import { api, ContentItem } from "@/api/client";
 import { useToast } from "@/components/ui/toast";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ItemFormModal } from "@/components/ItemFormModal";
+import { ChevronLeft, ChevronRight, Plus, CalendarDays, CalendarRange, Clock, List } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-  addDays, addMonths, subMonths, addWeeks, subWeeks,
-  isSameMonth, isSameDay, parseISO, startOfDay
+  addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay
 } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 
-const STATUS_BG: Record<string, string> = {
-  idea: "bg-indigo-500",
-  draft: "bg-violet-500",
-  review: "bg-amber-500",
-  approved: "bg-emerald-500",
-  blocked: "bg-red-500",
-  scheduled: "bg-blue-500",
-  published: "bg-cyan-500",
-};
+// Calendar sub-components
+import { CalendarSidebar } from "@/components/calendar/CalendarSidebar";
+import { CalendarMonthGrid } from "@/components/calendar/CalendarMonthGrid";
+import { CalendarWeekGrid } from "@/components/calendar/CalendarWeekGrid";
+import { CalendarDayView } from "@/components/calendar/CalendarDayView";
+import { CalendarAgendaView } from "@/components/calendar/CalendarAgendaView";
+import { CalendarEventPopover } from "@/components/calendar/CalendarEventPopover";
+import { CalendarSkeleton } from "@/components/calendar/CalendarSkeleton";
 
-type ViewMode = "month" | "week";
+type ViewMode = "month" | "week" | "day" | "agenda";
+
+const VIEW_CONFIG: { id: ViewMode; label: string; icon: React.ElementType }[] = [
+  { id: "month", label: "Month", icon: CalendarDays },
+  { id: "week", label: "Week", icon: CalendarRange },
+  { id: "day", label: "Day", icon: Clock },
+  { id: "agenda", label: "Agenda", icon: List },
+];
 
 export function CalendarPage() {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [items, setItems] = useState<ContentItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<ViewMode>("month");
   const [dragItem, setDragItem] = useState<ContentItem | null>(null);
-  const [editModal, setEditModal] = useState<{ open: boolean; item: ContentItem | null; date: string }>({ open: false, item: null, date: "" });
+
+  // Popover state
+  const [popover, setPopover] = useState<{ item: ContentItem; rect: DOMRect } | null>(null);
+
+  // Reschedule modal
+  const [editModal, setEditModal] = useState<{ open: boolean; item: ContentItem | null; date: string }>({
+    open: false, item: null, date: "",
+  });
+
+  // Create modal with pre-filled date
+  const [createModal, setCreateModal] = useState<{ open: boolean; date: Date | null }>({ open: false, date: null });
 
   const fetchItems = useCallback(async () => {
     try {
+      setLoading(true);
       let start: Date, end: Date;
       if (view === "month") {
         start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 });
         end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 });
-      } else {
+      } else if (view === "week") {
         start = startOfWeek(currentDate, { weekStartsOn: 0 });
         end = endOfWeek(currentDate, { weekStartsOn: 0 });
+      } else if (view === "day") {
+        start = startOfDay(currentDate);
+        end = addDays(start, 1);
+      } else {
+        // agenda — fetch wider range
+        start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 });
+        end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 });
       }
       const data = await api.getCalendar({ start: start.toISOString(), end: end.toISOString() });
       setItems(data.items);
     } catch {
       toast("Failed to load calendar", "error");
+    } finally {
+      setLoading(false);
     }
   }, [currentDate, view, toast]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  const navigate_date = (dir: number) => {
-    setCurrentDate(view === "month" ? (dir > 0 ? addMonths(currentDate, 1) : subMonths(currentDate, 1)) : (dir > 0 ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1)));
+  // Navigation
+  const navigateDate = (dir: number) => {
+    switch (view) {
+      case "month":
+        setCurrentDate(dir > 0 ? addMonths(currentDate, 1) : subMonths(currentDate, 1));
+        break;
+      case "week":
+        setCurrentDate(dir > 0 ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1));
+        break;
+      case "day":
+        setCurrentDate(dir > 0 ? addDays(currentDate, 1) : subDays(currentDate, 1));
+        break;
+      case "agenda":
+        setCurrentDate(dir > 0 ? addMonths(currentDate, 1) : subMonths(currentDate, 1));
+        break;
+    }
   };
 
-  const getItemsForDate = (date: Date) =>
-    items.filter((item) => {
-      const d = item.publish_date || item.due_date;
-      return d && isSameDay(parseISO(d), date);
-    });
+  const getTitle = () => {
+    switch (view) {
+      case "month": return format(currentDate, "MMMM yyyy");
+      case "week": return `Week of ${format(startOfWeek(currentDate), "MMM d, yyyy")}`;
+      case "day": return format(currentDate, "EEEE, MMMM d, yyyy");
+      case "agenda": return format(currentDate, "MMMM yyyy");
+    }
+  };
 
+  // Drag and drop
   const handleDrop = async (date: Date) => {
     if (!dragItem) return;
     const newDate = startOfDay(date).toISOString();
@@ -73,6 +116,7 @@ export function CalendarPage() {
     setDragItem(null);
   };
 
+  // Quick reschedule
   const handleQuickEdit = async () => {
     if (!editModal.item || !editModal.date) return;
     try {
@@ -85,132 +129,150 @@ export function CalendarPage() {
     }
   };
 
-  const renderMonthGrid = () => {
-    const monthStart = startOfMonth(currentDate);
-    const calStart = startOfWeek(monthStart, { weekStartsOn: 0 });
-    const rows: Date[][] = [];
-    let day = calStart;
-    for (let w = 0; w < 6; w++) {
-      const week: Date[] = [];
-      for (let d = 0; d < 7; d++) {
-        week.push(day);
-        day = addDays(day, 1);
-      }
-      rows.push(week);
-    }
-
-    return (
-      <div className="border border-zinc-800 rounded-lg overflow-hidden">
-        <div className="grid grid-cols-7 bg-zinc-900/60">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-            <div key={d} className="px-2 py-2 text-xs font-medium text-zinc-500 text-center border-b border-zinc-800">{d}</div>
-          ))}
-        </div>
-        {rows.map((week, wi) => (
-          <div key={wi} className="grid grid-cols-7">
-            {week.map((day, di) => {
-              const dayItems = getItemsForDate(day);
-              const isToday = isSameDay(day, new Date());
-              const inMonth = isSameMonth(day, currentDate);
-              return (
-                <div
-                  key={di}
-                  className={`min-h-24 border-b border-r border-zinc-800 p-1 transition-colors ${inMonth ? "" : "opacity-40"} ${dragItem ? "hover:bg-zinc-800/60" : ""}`}
-                  onDragOver={(e) => { e.preventDefault(); }}
-                  onDrop={() => handleDrop(day)}
-                >
-                  <div className={`text-xs font-medium mb-1 px-1 ${isToday ? "text-indigo-400" : "text-zinc-500"}`}>
-                    {format(day, "d")}
-                  </div>
-                  <div className="space-y-0.5">
-                    {dayItems.slice(0, 3).map((item) => (
-                      <div
-                        key={item.id}
-                        draggable
-                        onDragStart={() => setDragItem(item)}
-                        onDragEnd={() => setDragItem(null)}
-                        onClick={() => navigate(`/item/${item.id}`)}
-                        onContextMenu={(e) => { e.preventDefault(); setEditModal({ open: true, item, date: item.publish_date || item.due_date || "" }); }}
-                        className={`${STATUS_BG[item.status] || "bg-zinc-600"} text-white text-[10px] px-1.5 py-0.5 rounded truncate cursor-grab active:cursor-grabbing hover:opacity-80 transition-opacity`}
-                      >
-                        {item.brand}
-                      </div>
-                    ))}
-                    {dayItems.length > 3 && (
-                      <div className="text-[10px] text-zinc-500 px-1">+{dayItems.length - 3} more</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    );
+  // Item click — show popover
+  const handleItemClick = (item: ContentItem, rect: DOMRect) => {
+    setPopover({ item, rect });
   };
 
-  const renderWeekGrid = () => {
-    const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
-    const days: Date[] = [];
-    for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
-
-    return (
-      <div className="grid grid-cols-7 gap-2">
-        {days.map((day, i) => {
-          const dayItems = getItemsForDate(day);
-          const isToday = isSameDay(day, new Date());
-          return (
-            <div
-              key={i}
-              className={`rounded-lg border border-zinc-800 min-h-48 ${dragItem ? "hover:bg-zinc-800/60" : ""}`}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => handleDrop(day)}
-            >
-              <div className={`px-3 py-2 border-b border-zinc-800 ${isToday ? "bg-indigo-500/10" : ""}`}>
-                <div className="text-xs text-zinc-500">{format(day, "EEE")}</div>
-                <div className={`text-lg font-semibold ${isToday ? "text-indigo-400" : "text-zinc-300"}`}>{format(day, "d")}</div>
-              </div>
-              <div className="p-2 space-y-1">
-                {dayItems.map((item) => (
-                  <div
-                    key={item.id}
-                    draggable
-                    onDragStart={() => setDragItem(item)}
-                    onDragEnd={() => setDragItem(null)}
-                    onClick={() => navigate(`/item/${item.id}`)}
-                    onContextMenu={(e) => { e.preventDefault(); setEditModal({ open: true, item, date: item.publish_date || item.due_date || "" }); }}
-                    className={`${STATUS_BG[item.status] || "bg-zinc-600"} text-white text-xs px-2 py-1.5 rounded cursor-grab active:cursor-grabbing hover:opacity-80 transition-opacity`}
-                  >
-                    <div className="font-medium truncate">{item.brand}</div>
-                    {item.platform && <div className="opacity-70 text-[10px]">{item.platform}</div>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
+  // Cell/slot click — open create modal
+  const handleCellClick = (date: Date) => {
+    setCreateModal({ open: true, date });
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">Calendar</h1>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-md border border-zinc-800 overflow-hidden">
-            <button onClick={() => setView("month")} className={`px-3 py-1.5 text-xs font-medium ${view === "month" ? "bg-zinc-700 text-white" : "text-zinc-400 hover:bg-zinc-800"}`}>Month</button>
-            <button onClick={() => setView("week")} className={`px-3 py-1.5 text-xs font-medium ${view === "week" ? "bg-zinc-700 text-white" : "text-zinc-400 hover:bg-zinc-800"}`}>Week</button>
+    <div className="animate-fadeIn">
+      {/* ── Top Bar ── */}
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-zinc-100 to-zinc-400 bg-clip-text text-transparent">
+            Calendar
+          </h1>
+          <button
+            onClick={() => setCurrentDate(new Date())}
+            className="px-3 py-1.5 text-xs rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-all duration-200 font-medium"
+          >
+            Today
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* View switcher */}
+          <div className="flex rounded-xl border border-zinc-800/60 overflow-hidden glass-panel">
+            {VIEW_CONFIG.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setView(id)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-all duration-200 ${view === id
+                    ? "bg-gradient-to-r from-indigo-600/30 to-cyan-600/20 text-white"
+                    : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.04]"
+                  }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
           </div>
-          <button onClick={() => navigate_date(-1)} className="p-1.5 rounded-md hover:bg-zinc-800 text-zinc-400"><ChevronLeft className="h-4 w-4" /></button>
-          <span className="text-sm font-medium min-w-32 text-center">{view === "month" ? format(currentDate, "MMMM yyyy") : `Week of ${format(startOfWeek(currentDate), "MMM d, yyyy")}`}</span>
-          <button onClick={() => navigate_date(1)} className="p-1.5 rounded-md hover:bg-zinc-800 text-zinc-400"><ChevronRight className="h-4 w-4" /></button>
-          <button onClick={() => setCurrentDate(new Date())} className="px-3 py-1.5 text-xs rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700">Today</button>
+
+          {/* Date navigation */}
+          <div className="flex items-center gap-1">
+            <button onClick={() => navigateDate(-1)} className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-sm font-semibold text-zinc-300 min-w-[180px] text-center">{getTitle()}</span>
+            <button onClick={() => navigateDate(1)} className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* New Item */}
+          <button
+            onClick={() => setCreateModal({ open: true, date: currentDate })}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-indigo-500 text-white text-xs font-semibold hover:from-indigo-500 hover:to-indigo-400 transition-all duration-200 shadow-lg shadow-indigo-600/20"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Item
+          </button>
         </div>
       </div>
 
-      {view === "month" ? renderMonthGrid() : renderWeekGrid()}
+      {/* ── Main Content ── */}
+      <div className="flex gap-5">
+        {/* Sidebar */}
+        <CalendarSidebar
+          currentDate={currentDate}
+          onDateSelect={(date) => {
+            setCurrentDate(date);
+            if (view === "month" || view === "agenda") {
+              // stay in current view
+            }
+          }}
+          items={items}
+        />
 
+        {/* Calendar View */}
+        <div className="flex-1 min-w-0">
+          {loading ? (
+            <CalendarSkeleton view={view} />
+          ) : (
+            <>
+              {view === "month" && (
+                <CalendarMonthGrid
+                  currentDate={currentDate}
+                  items={items}
+                  dragItem={dragItem}
+                  onDragStart={setDragItem}
+                  onDragEnd={() => setDragItem(null)}
+                  onDrop={handleDrop}
+                  onItemClick={handleItemClick}
+                  onCellClick={handleCellClick}
+                />
+              )}
+              {view === "week" && (
+                <CalendarWeekGrid
+                  currentDate={currentDate}
+                  items={items}
+                  dragItem={dragItem}
+                  onDragStart={setDragItem}
+                  onDragEnd={() => setDragItem(null)}
+                  onDrop={handleDrop}
+                  onItemClick={handleItemClick}
+                  onCellClick={handleCellClick}
+                />
+              )}
+              {view === "day" && (
+                <CalendarDayView
+                  currentDate={currentDate}
+                  items={items}
+                  onItemClick={handleItemClick}
+                  onSlotClick={handleCellClick}
+                />
+              )}
+              {view === "agenda" && (
+                <CalendarAgendaView
+                  currentDate={currentDate}
+                  items={items}
+                  onItemClick={handleItemClick}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Event Popover ── */}
+      {popover && (
+        <CalendarEventPopover
+          item={popover.item}
+          anchorRect={popover.rect}
+          onClose={() => setPopover(null)}
+          onReschedule={(item) => {
+            setPopover(null);
+            setEditModal({ open: true, item, date: item.publish_date || item.due_date || "" });
+          }}
+        />
+      )}
+
+      {/* ── Reschedule Modal ── */}
       <Dialog open={editModal.open} onOpenChange={(o) => !o && setEditModal({ open: false, item: null, date: "" })}>
         <DialogContent>
           <DialogClose onClick={() => setEditModal({ open: false, item: null, date: "" })} />
@@ -224,16 +286,23 @@ export function CalendarPage() {
                 type="datetime-local"
                 value={editModal.date ? editModal.date.slice(0, 16) : ""}
                 onChange={(e) => setEditModal((prev) => ({ ...prev, date: e.target.value }))}
-                className="w-full h-9 px-3 rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200"
+                className="w-full h-10 px-3 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-shadow"
               />
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setEditModal({ open: false, item: null, date: "" })} className="px-4 py-2 text-sm rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700">Cancel</button>
-              <button onClick={handleQuickEdit} className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-500">Save</button>
+              <button onClick={() => setEditModal({ open: false, item: null, date: "" })} className="px-4 py-2 text-sm rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">Cancel</button>
+              <button onClick={handleQuickEdit} className="px-4 py-2 text-sm rounded-lg bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-medium hover:from-indigo-500 hover:to-indigo-400 transition-all shadow-lg shadow-indigo-600/20">Save</button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Create Item Modal ── */}
+      <ItemFormModal
+        open={createModal.open}
+        onClose={() => setCreateModal({ open: false, date: null })}
+        onSaved={fetchItems}
+      />
     </div>
   );
 }
