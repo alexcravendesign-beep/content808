@@ -72,6 +72,10 @@ export const api = {
   getPlugins: () => request<{ plugins: Plugin[] }>('/plugins'),
   updatePlugin: (id: string, data: Partial<Plugin>) =>
     request<Plugin>(`/plugins/${id}`, { method: 'PUT', body: data }),
+
+  getActivity: (limit = 100) => request<{ entries: AuditEntry[] }>(`/audit?limit=${limit}`),
+
+  agentFill: (id: string) => request<{ jobId: string }>(`/items/${id}/agent-fill`, { method: 'POST' }),
 };
 
 export interface ContentItem {
@@ -89,6 +93,7 @@ export interface ContentItem {
   due_date: string | null;
   publish_date: string | null;
   assignee: string | null;
+  final_copy: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -109,6 +114,7 @@ export interface ContentItemOutput {
   content_item_id: string;
   output_type: string;
   output_data: Record<string, unknown>;
+  created_by?: string;
   created_at: string;
 }
 

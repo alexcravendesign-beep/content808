@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/connection';
+import { logAudit } from '../services/audit';
 
 const router = Router();
 
@@ -79,6 +80,18 @@ router.put('/calendar/:id/reschedule', async (req: Request, res: Response) => {
       `UPDATE content_items SET ${updates.join(', ')} WHERE id = $${idx}`,
       values
     );
+
+    await logAudit({
+      entityType: 'content_item',
+      entityId: req.params.id,
+      action: 'reschedule',
+      actor: req.user?.id || 'unknown',
+      actorRole: (req.user?.role as 'staff' | 'manager' | 'admin') || 'staff',
+      details: {
+        publish_date: publish_date ?? null,
+        due_date: due_date ?? null,
+      },
+    });
 
     const result = await query('SELECT * FROM content_items WHERE id = $1', [req.params.id]);
     res.json(result.rows[0]);

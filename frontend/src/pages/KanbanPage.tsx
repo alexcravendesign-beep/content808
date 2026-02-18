@@ -9,28 +9,11 @@ import { ItemFormModal } from "@/components/ItemFormModal";
 import { useToast } from "@/components/ui/toast";
 import { Plus } from "lucide-react";
 import { KanbanLane } from "@/components/KanbanLane";
+import { KanbanSkeleton } from "@/components/Skeletons";
 
 const STATUSES = ["idea", "draft", "review", "approved", "blocked", "scheduled", "published"] as const;
 
-const STATUS_COLORS: Record<string, string> = {
-  idea: "border-indigo-500/40",
-  draft: "border-violet-500/40",
-  review: "border-amber-500/40",
-  approved: "border-emerald-500/40",
-  blocked: "border-red-500/40",
-  scheduled: "border-blue-500/40",
-  published: "border-cyan-500/40",
-};
-
-const STATUS_BG: Record<string, string> = {
-  idea: "bg-indigo-500/10",
-  draft: "bg-violet-500/10",
-  review: "bg-amber-500/10",
-  approved: "bg-emerald-500/10",
-  blocked: "bg-red-500/10",
-  scheduled: "bg-blue-500/10",
-  published: "bg-cyan-500/10",
-};
+import { STATUS_BORDER as STATUS_COLORS, STATUS_BG_LANE as STATUS_BG } from "@/lib/statusConfig";
 
 export function KanbanPage() {
   const navigate = useNavigate();
@@ -109,7 +92,7 @@ export function KanbanPage() {
       <FilterBar filters={filters} onChange={setFilters} />
 
       {loading ? (
-        <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Loading...</div>
+        <KanbanSkeleton />
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-3 overflow-x-auto pb-4">

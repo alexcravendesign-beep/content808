@@ -2,16 +2,7 @@ import { ContentItem } from "@/api/client";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
 import { format, isSameDay, parseISO } from "date-fns";
-
-const STATUS_BG: Record<string, string> = {
-    idea: "bg-indigo-500/10 border-indigo-500/20",
-    draft: "bg-violet-500/10 border-violet-500/20",
-    review: "bg-amber-500/10 border-amber-500/20",
-    approved: "bg-emerald-500/10 border-emerald-500/20",
-    blocked: "bg-red-500/10 border-red-500/20",
-    scheduled: "bg-blue-500/10 border-blue-500/20",
-    published: "bg-cyan-500/10 border-cyan-500/20",
-};
+import { STATUS_BG_LIGHT as STATUS_BG } from "@/lib/statusConfig";
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6 AM to 11 PM
 

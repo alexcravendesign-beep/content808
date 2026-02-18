@@ -20,36 +20,44 @@ function handleValidation(req: Request, res: Response): boolean {
 
 router.get('/items', async (req: Request, res: Response) => {
   try {
-    const { status, platform, assignee, brand, search } = req.query;
-    let sql = 'SELECT * FROM content_items WHERE 1=1';
+    const { status, platform, assignee, brand, search, limit, offset } = req.query;
+    let where = 'WHERE 1=1';
     const params: unknown[] = [];
     let idx = 1;
 
     if (status) {
-      sql += ` AND status = $${idx++}`;
+      where += ` AND status = $${idx++}`;
       params.push(status);
     }
     if (platform) {
-      sql += ` AND platform = $${idx++}`;
+      where += ` AND platform = $${idx++}`;
       params.push(platform);
     }
     if (assignee) {
-      sql += ` AND assignee = $${idx++}`;
+      where += ` AND assignee = $${idx++}`;
       params.push(assignee);
     }
     if (brand) {
-      sql += ` AND brand ILIKE $${idx++}`;
+      where += ` AND brand ILIKE $${idx++}`;
       params.push(`%${brand}%`);
     }
     if (search) {
-      sql += ` AND (brand ILIKE $${idx} OR campaign_goal ILIKE $${idx} OR direction ILIKE $${idx})`;
+      where += ` AND (brand ILIKE $${idx} OR campaign_goal ILIKE $${idx} OR direction ILIKE $${idx})`;
       params.push(`%${search}%`);
       idx++;
     }
 
-    sql += ' ORDER BY updated_at DESC';
-    const result = await query(sql, params);
-    res.json({ items: result.rows, total: result.rows.length });
+    // Count total matching rows
+    const countResult = await query(`SELECT COUNT(*)::int as count FROM content_items ${where}`, params);
+    const total = countResult.rows[0].count;
+
+    // Paginate
+    const pageLimit = Math.min(parseInt(limit as string) || 200, 500);
+    const pageOffset = parseInt(offset as string) || 0;
+
+    const sql = `SELECT * FROM content_items ${where} ORDER BY updated_at DESC LIMIT $${idx++} OFFSET $${idx++}`;
+    const result = await query(sql, [...params, pageLimit, pageOffset]);
+    res.json({ items: result.rows, total, limit: pageLimit, offset: pageOffset });
   } catch (err) {
     console.error('Error fetching items:', err);
     res.status(500).json({ error: 'Failed to fetch items' });

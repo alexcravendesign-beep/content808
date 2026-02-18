@@ -13,11 +13,8 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
-
-const STATUS_COLORS: Record<string, string> = {
-  idea: "bg-indigo-500", draft: "bg-violet-500", review: "bg-amber-500",
-  approved: "bg-emerald-500", blocked: "bg-red-500", scheduled: "bg-blue-500", published: "bg-cyan-500",
-};
+import { STATUS_BG_SOLID as STATUS_COLORS } from "@/lib/statusConfig";
+import { DetailSkeleton } from "@/components/Skeletons";
 
 const ACTION_ICONS: Record<string, React.ElementType> = {
   create: FileText, update: Edit, transition: ChevronRight,
@@ -106,7 +103,17 @@ export function ItemDetailPage() {
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Loading...</div>;
+  const handleAgentFill = async () => {
+    if (!item) return;
+    try {
+      await api.agentFill(item.id);
+      toast("Agent draft queued — refresh in a moment", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Agent fill failed", "error");
+    }
+  };
+
+  if (loading) return <DetailSkeleton />;
   if (!item) return <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Item not found</div>;
 
   return (
@@ -128,6 +135,11 @@ export function ItemDetailPage() {
             {item.campaign_goal && <p className="text-sm text-[hsl(var(--th-text-secondary))] mb-3">{item.campaign_goal}</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {item.status === "idea" && (
+              <button onClick={handleAgentFill} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-indigo-600/20 to-violet-600/20 text-indigo-400 text-xs font-medium hover:from-indigo-600/30 hover:to-violet-600/30 transition-all" title="Generate draft via AI agent">
+                <Sparkles className="h-3.5 w-3.5" />Generate Draft
+              </button>
+            )}
             <button onClick={() => setEditOpen(true)} className="p-2 rounded-md bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
               <Edit className="h-4 w-4" />
             </button>
@@ -154,6 +166,12 @@ export function ItemDetailPage() {
           <div className="mb-3">
             <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Pivot Notes</label>
             <p className="text-sm text-[hsl(var(--th-text-secondary))]">{item.pivot_notes}</p>
+          </div>
+        )}
+        {item.final_copy && (
+          <div className="mb-3">
+            <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Draft Copy</label>
+            <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap bg-[hsl(var(--th-input)/0.5)] rounded-lg p-3">{item.final_copy}</p>
           </div>
         )}
         {item.product_url && (
@@ -265,9 +283,28 @@ export function ItemDetailPage() {
                 <div key={o.id} className="bg-[hsl(var(--th-input)/0.5)] rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <Badge variant="secondary">{o.output_type}</Badge>
+                    {o.created_by && <span className="text-[11px] text-[hsl(var(--th-text-muted))] italic">{o.created_by}</span>}
                     <span className="text-[11px] text-[hsl(var(--th-text-muted))]">{format(new Date(o.created_at), "MMM d, h:mm a")}</span>
                   </div>
-                  <pre className="text-xs text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap overflow-hidden">{JSON.stringify(o.output_data, null, 2)}</pre>
+                  {o.output_type === "draft_copy" && typeof o.output_data.text === "string" ? (
+                    <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap">{o.output_data.text}</p>
+                  ) : o.output_type === "metadata" && Array.isArray(o.output_data.hashtags) ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(o.output_data.hashtags as string[]).map((tag, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-medium">{tag}</span>
+                      ))}
+                    </div>
+                  ) : o.output_type === "asset_prompt_suggestions" && Array.isArray(o.output_data.prompts) ? (
+                    <ul className="space-y-1.5 pl-1">
+                      {(o.output_data.prompts as string[]).map((p, i) => (
+                        <li key={i} className="text-xs text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 shrink-0" />{p}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <pre className="text-xs text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap overflow-hidden">{JSON.stringify(o.output_data, null, 2)}</pre>
+                  )}
                 </div>
               ))}
             </div>

@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@
 import { useToast } from "@/components/ui/toast";
 import { CheckCircle, XCircle, Clock, User, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
+import { ListSkeleton } from "@/components/Skeletons";
 
 export function ApprovalsPage() {
   const navigate = useNavigate();
@@ -64,7 +65,7 @@ export function ApprovalsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Loading...</div>
+        <ListSkeleton rows={4} />
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">
           <CheckCircle className="h-12 w-12 mb-3 opacity-30" />

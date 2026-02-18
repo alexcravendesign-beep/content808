@@ -3,16 +3,7 @@ import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
 import {
     format, startOfWeek, addDays, isSameDay, parseISO
 } from "date-fns";
-
-const STATUS_STRIP: Record<string, string> = {
-    idea: "border-l-indigo-500", draft: "border-l-violet-500", review: "border-l-amber-500",
-    approved: "border-l-emerald-500", blocked: "border-l-red-500", scheduled: "border-l-blue-500", published: "border-l-cyan-500",
-};
-
-const STATUS_DOT: Record<string, string> = {
-    idea: "bg-indigo-400", draft: "bg-violet-400", review: "bg-amber-400",
-    approved: "bg-emerald-400", blocked: "bg-red-400", scheduled: "bg-blue-400", published: "bg-cyan-400",
-};
+import { STATUS_STRIP, STATUS_DOT } from "@/lib/statusConfig";
 
 interface CalendarWeekGridProps {
     currentDate: Date;

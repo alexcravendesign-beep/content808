@@ -3,15 +3,7 @@ import { api, Stats } from "@/api/client";
 import { productApi, ProductStats } from "@/api/productApi";
 import { FileText, Clock, CalendarCheck, AlertTriangle, Package } from "lucide-react";
 
-const STATUS_COLORS: Record<string, string> = {
-  idea: "bg-indigo-500/20 text-indigo-400",
-  draft: "bg-violet-500/20 text-violet-400",
-  review: "bg-amber-500/20 text-amber-400",
-  approved: "bg-emerald-500/20 text-emerald-400",
-  blocked: "bg-red-500/20 text-red-400",
-  scheduled: "bg-blue-500/20 text-blue-400",
-  published: "bg-cyan-500/20 text-cyan-400",
-};
+import { STATUS_KPI as STATUS_COLORS } from "@/lib/statusConfig";
 
 export function KpiStrip() {
   const [stats, setStats] = useState<Stats | null>(null);

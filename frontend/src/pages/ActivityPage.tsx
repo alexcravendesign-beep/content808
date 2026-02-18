@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/components/ui/toast";
-import { AuditEntry } from "@/api/client";
+import { api, AuditEntry } from "@/api/client";
 import { format } from "date-fns";
 import { Activity, FileText, Edit, ChevronRight, Zap, Trash2, MessageSquare, Settings } from "lucide-react";
-
-const API_URL = import.meta.env.VITE_API_URL || "";
+import { ActivitySkeleton } from "@/components/Skeletons";
 
 const ACTION_ICONS: Record<string, React.ElementType> = {
   create: FileText, update: Edit, transition: ChevronRight,
@@ -26,20 +25,13 @@ export function ActivityPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/v1/content-hub/audit?limit=100`, {
-      headers: {
-        "x-user-id": "staff-user-1",
-        "x-user-name": "Staff User",
-        "x-user-role": "admin",
-      },
-    })
-      .then((r) => r.json())
+    api.getActivity(100)
       .then((data) => setEntries(data.entries || []))
       .catch(() => toast("Failed to load activity", "error"))
       .finally(() => setLoading(false));
   }, [toast]);
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Loading...</div>;
+  if (loading) return <div className="max-w-3xl mx-auto"><ActivitySkeleton /></div>;
 
   return (
     <div className="max-w-3xl mx-auto">
