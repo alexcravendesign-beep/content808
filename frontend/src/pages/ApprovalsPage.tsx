@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ContentItem } from "@/api/client";
+import { campaignGoalLabel } from "@/lib/formatHelpers";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
@@ -82,7 +83,7 @@ export function ApprovalsPage() {
                     <h3 className="text-sm font-semibold text-[hsl(var(--th-text))]">{item.brand}</h3>
                     {item.platform && <Badge variant="secondary" className="text-[10px]">{item.platform}</Badge>}
                   </div>
-                  {item.campaign_goal && <p className="text-xs text-[hsl(var(--th-text-secondary))] mb-2">{item.campaign_goal}</p>}
+                  {item.campaign_goal && <p className="text-xs text-[hsl(var(--th-text-secondary))] mb-2">{campaignGoalLabel(item.campaign_goal)}</p>}
                   <div className="flex items-center gap-4 text-[11px] text-[hsl(var(--th-text-muted))]">
                     {item.assignee && (
                       <span className="flex items-center gap-1"><User className="h-3 w-3" />{item.assignee}</span>
