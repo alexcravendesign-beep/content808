@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import {
   ArrowLeft, Edit, Trash2, ExternalLink, User, Calendar, Send,
   ChevronRight, Clock, FileText, MessageSquare, Activity, Zap,
-  Package, Sparkles, Wrench, ChevronDown
+  Package, Sparkles, Wrench
 } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
@@ -358,20 +358,13 @@ function InfoField({ icon: Icon, label, value }: { icon: React.ElementType; labe
 /* ── Product Details Panel ── */
 
 function ProductPanel({ product }: { product: Product }) {
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    features: true, marketing: false, specs: false,
-  });
-
-  const toggle = (key: string) =>
-    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
-
   return (
     <div className="bg-[hsl(var(--th-surface))] border border-[hsl(var(--th-border))] rounded-lg p-6 mb-4">
       <h2 className="text-xs font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider mb-4 flex items-center gap-1.5">
         <Package className="h-3.5 w-3.5" /> Product Details
       </h2>
 
-      <div className="flex items-start gap-4 mb-4">
+      <div className="flex items-start gap-4 mb-6">
         {product.thumbnail ? (
           <img
             src={product.thumbnail}
@@ -408,14 +401,42 @@ function ProductPanel({ product }: { product: Product }) {
         )}
       </div>
 
-      {/* Collapsible sections */}
+      {/* USP */}
+      {product.usp && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" /> Unique Selling Point
+          </h3>
+          <p className="text-sm text-[hsl(var(--th-text-secondary))]">{product.usp}</p>
+        </div>
+      )}
+
+      {/* Description */}
+      {product.description && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <FileText className="h-3.5 w-3.5" /> Description
+          </h3>
+          <p className="text-sm text-[hsl(var(--th-text-secondary))]">{product.description}</p>
+        </div>
+      )}
+
+      {/* Visual Style */}
+      {product.visual_style && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Activity className="h-3.5 w-3.5" /> Visual Style
+          </h3>
+          <p className="text-sm text-[hsl(var(--th-text-secondary))]">{product.visual_style}</p>
+        </div>
+      )}
+
+      {/* Features */}
       {(product.features || []).length > 0 && (
-        <CollapsibleSection
-          title="Features"
-          icon={<Sparkles className="h-3.5 w-3.5" />}
-          open={openSections.features}
-          onToggle={() => toggle("features")}
-        >
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" /> Features
+          </h3>
           <ul className="space-y-1">
             {(product.features || []).map((f, i) => (
               <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
@@ -424,19 +445,94 @@ function ProductPanel({ product }: { product: Product }) {
               </li>
             ))}
           </ul>
-        </CollapsibleSection>
+        </div>
       )}
 
-      {(product.marketing_angles || []).length > 0 && (
-        <CollapsibleSection
-          title="Marketing Angles"
-          icon={<Sparkles className="h-3.5 w-3.5" />}
-          open={openSections.marketing}
-          onToggle={() => toggle("marketing")}
-        >
+      {/* Benefits */}
+      {(product.benefits || []).length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Zap className="h-3.5 w-3.5" /> Benefits
+          </h3>
           <ul className="space-y-1">
+            {(product.benefits || []).map((b, i) => (
+              <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                {b}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Pain Points */}
+      {(product.pain_points || []).length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Activity className="h-3.5 w-3.5" /> Pain Points
+          </h3>
+          <ul className="space-y-1">
+            {(product.pain_points || []).map((p, i) => (
+              <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                {p}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Target Audience */}
+      {(product.target_audience || []).length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <User className="h-3.5 w-3.5" /> Target Audience
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            {(product.target_audience || []).map((a, i) => (
+              <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-400 font-medium">
+                {a}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Competitors */}
+      {(product.competitors || []).length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-rose-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Activity className="h-3.5 w-3.5" /> Competitors
+          </h3>
+          <ul className="space-y-1">
+            {(product.competitors || []).map((c, i) => (
+              <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0" />
+                {c}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Annual Energy Consumption */}
+      {product.annual_energy_consumption && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Zap className="h-3.5 w-3.5" /> Annual Energy Consumption
+          </h3>
+          <p className="text-sm text-[hsl(var(--th-text-secondary))]">{product.annual_energy_consumption} kWh</p>
+        </div>
+      )}
+
+      {/* Marketing Angles */}
+      {(product.marketing_angles || []).length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" /> Marketing Angles
+          </h3>
+          <ul className="space-y-3">
             {(product.marketing_angles || []).map((a, i) => {
-              /* Handle both plain strings and { title, content } objects */
               if (typeof a === "string") {
                 return (
                   <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
@@ -456,31 +552,26 @@ function ProductPanel({ product }: { product: Product }) {
               );
             })}
           </ul>
-        </CollapsibleSection>
+        </div>
       )}
 
+      {/* Technical Specs */}
       {(product.technical_specs || []).length > 0 && (
-        <CollapsibleSection
-          title="Technical Specs"
-          icon={<Wrench className="h-3.5 w-3.5" />}
-          open={openSections.specs}
-          onToggle={() => toggle("specs")}
-        >
-          <div className="space-y-3">
+        <div>
+          <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <Wrench className="h-3.5 w-3.5" /> Technical Specs
+          </h3>
+          <div className="space-y-4">
             {(product.technical_specs || []).map((spec, i) => {
-              /* Handle both string and TechnicalSpec formats */
               if (typeof spec === 'string') {
                 return (
-                  <div key={i}>
-                    <div className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
-                      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
-                      {spec}
-                    </div>
+                  <div key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                    {spec}
                   </div>
                 );
               }
 
-              /* Normalise: prefer terms[], fall back to splitting value string */
               const items: string[] = Array.isArray(spec.terms) && spec.terms.length > 0
                 ? spec.terms
                 : spec.value
@@ -504,29 +595,8 @@ function ProductPanel({ product }: { product: Product }) {
               );
             })}
           </div>
-        </CollapsibleSection>
+        </div>
       )}
-    </div>
-  );
-}
-
-function CollapsibleSection({
-  title, icon, open, onToggle, children,
-}: {
-  title: string; icon: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode;
-}) {
-  return (
-    <div className="border-t border-[hsl(var(--th-border)/0.5)] pt-3 mt-3">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-2 text-xs font-semibold text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] transition-colors"
-      >
-        {icon}
-        <span className="uppercase tracking-wider">{title}</span>
-        <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && <div className="mt-2">{children}</div>}
     </div>
   );
 }

@@ -117,7 +117,7 @@ export function CalendarMonthGrid({
                                                     {item.platform && (
                                                         <span className="text-[9px] text-[hsl(var(--th-text-muted))] uppercase">{item.platform}</span>
                                                     )}
-                                                    {(item as Record<string, unknown>).item_type === 'social_post' && (
+                                                    {(item as unknown as { item_type?: string }).item_type === 'social_post' && (
                                                         <span className="inline-flex h-3 w-3 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" title="Social Post" />
                                                     )}
                                                 </div>

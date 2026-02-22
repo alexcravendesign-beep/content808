@@ -6,6 +6,23 @@ const router = Router();
 
 const supabase = createClient(config.supabase.url, config.supabase.anonKey);
 
+// Transform localhost URLs to configured Supabase URL
+function transformImageUrls(product: Record<string, unknown>): Record<string, unknown> {
+  const transformed = { ...product };
+  const images = product.images as unknown[] | undefined;
+  if (Array.isArray(images)) {
+    const fixedImages = images.map((url: unknown) => 
+      String(url)
+        .replace(/http:\/\/localhost:8000\/storage\/v1\/object\/public\//, 'http://localhost:8000/storage/v1/object/public/')
+        .replace(/http:\/\/host\.docker\.internal:8000\/storage\/v1\/object\/public\//, 'http://localhost:8000/storage/v1/object/public/')
+    );
+    transformed.images = fixedImages;
+    // Also set thumbnail for frontend compatibility
+    transformed.thumbnail = fixedImages[0] || null;
+  }
+  return transformed;
+}
+
 // GET /products - Search products
 router.get('/products', async (req: Request, res: Response) => {
   try {
@@ -37,7 +54,7 @@ router.get('/products', async (req: Request, res: Response) => {
       total: count || 0,
       limit: Number(limit),
       offset: Number(offset),
-      items: data || [],
+      items: (data || []).map(transformImageUrls),
     });
   } catch (err) {
     console.error('Products search error:', err);
