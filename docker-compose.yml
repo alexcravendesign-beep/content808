@@ -10,11 +10,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - default
+      - supabase_default
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       PORT: "4000"
       NODE_ENV: production
@@ -40,17 +45,25 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - default
+      - supabase_default
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://localhost:3000
-    environment:
-      BACKEND_API_URL: http://backend:4000
+        VITE_API_URL: https://content.cravencooling.services
     ports:
       - "3000:80"
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - default
+      - supabase_default
+
+networks:
+  supabase_default:
+    external: true
