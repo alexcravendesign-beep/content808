@@ -22,7 +22,12 @@ export function ItemCard({ item, onClick, compact }: ItemCardProps) {
         <div className="flex items-center gap-2 min-w-0">
           <ProductThumbnail item={item} size="sm" />
           <div className={`h-2 w-2 rounded-full shrink-0 ${STATUS_DOT[item.status] || "bg-zinc-500"} ring-2 ring-[hsl(var(--th-surface))]`} />
-          <span className="text-sm font-medium text-[hsl(var(--th-text))] truncate group-hover:text-[hsl(var(--th-text))] transition-colors">{item.brand}</span>
+          <div className="min-w-0">
+            <span className="text-sm font-medium text-[hsl(var(--th-text))] truncate block group-hover:text-[hsl(var(--th-text))] transition-colors">{item.product_title || item.brand}</span>
+            {item.product_title && item.brand !== item.product_title && (
+              <span className="text-[11px] text-[hsl(var(--th-text-muted))] truncate block">{item.brand}</span>
+            )}
+          </div>
         </div>
         {item.platform && (
           <Badge variant="secondary" className="text-[10px] uppercase shrink-0">{item.platform}</Badge>
