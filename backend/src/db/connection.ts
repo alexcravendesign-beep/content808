@@ -1,33 +1,15 @@
-import { Pool } from 'pg';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config';
 
-export const pool = new Pool({
-  host: config.db.host,
-  port: config.db.port,
-  database: config.db.database,
-  user: config.db.user,
-  password: config.db.password,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  ssl: config.db.ssl ? { rejectUnauthorized: false } : false,
-});
-
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-});
-
-export async function query(text: string, params?: unknown[]) {
-  const start = Date.now();
-  const result = await pool.query(text, params);
-  const duration = Date.now() - start;
-  if (duration > 1000) {
-    console.warn(`Slow query (${duration}ms): ${text.substring(0, 100)}`);
-  }
-  return result;
-}
-
-export async function getClient() {
-  const client = await pool.connect();
-  return client;
-}
+/**
+ * Shared Supabase client instance used across the entire backend.
+ * Use the query-builder API (supabase.from(...).select(), .insert(), etc.)
+ * for all application queries.
+ *
+ * Migrations are the only exception – they use a dedicated pg Pool in
+ * migrate.ts because DDL statements require raw SQL.
+ */
+export const supabase: SupabaseClient = createClient(
+  config.supabase.url,
+  config.supabase.anonKey,
+);

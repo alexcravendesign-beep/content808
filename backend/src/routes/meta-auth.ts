@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { config } from '../config';
-import { query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
@@ -88,13 +88,25 @@ router.get('/meta/callback', async (req: Request, res: Response) => {
       const pageAvatar = page.picture?.data?.url || '';
       const pageToken = page.access_token;
 
-      await query(
-        `INSERT INTO social_accounts (id, user_id, provider, provider_account_id, account_type, account_name, account_avatar_url, access_token, token_expires_at, long_lived_token, page_id, metadata)
-         VALUES ($1, $2, 'meta', $3, 'facebook_page', $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT (user_id, provider, provider_account_id)
-         DO UPDATE SET account_name = $4, account_avatar_url = $5, access_token = $6, token_expires_at = $7, long_lived_token = $8, updated_at = NOW(), is_active = true`,
-        [uuidv4(), userId, pageId, pageName, pageAvatar, pageToken, tokenExpiresAt, isLongLived, pageId, JSON.stringify({ page_category: '' })]
+      const { error: upsertError } = await supabase.from('social_accounts').upsert(
+        {
+          id: uuidv4(),
+          user_id: userId,
+          provider: 'meta',
+          provider_account_id: pageId,
+          account_type: 'facebook_page',
+          account_name: pageName,
+          account_avatar_url: pageAvatar,
+          access_token: pageToken,
+          token_expires_at: tokenExpiresAt.toISOString(),
+          long_lived_token: isLongLived,
+          page_id: pageId,
+          metadata: { page_category: '' },
+          is_active: true,
+        },
+        { onConflict: 'user_id,provider,provider_account_id' }
       );
+      if (upsertError) throw new Error(upsertError.message);
       connectedCount++;
 
       if (page.instagram_business_account) {
@@ -103,13 +115,26 @@ router.get('/meta/callback', async (req: Request, res: Response) => {
         const igData = await igRes.json() as { id?: string; name?: string; username?: string; profile_picture_url?: string };
 
         if (igData.id) {
-          await query(
-            `INSERT INTO social_accounts (id, user_id, provider, provider_account_id, account_type, account_name, account_avatar_url, access_token, token_expires_at, long_lived_token, page_id, instagram_account_id, metadata)
-             VALUES ($1, $2, 'meta', $3, 'instagram_business', $4, $5, $6, $7, $8, $9, $10, $11)
-             ON CONFLICT (user_id, provider, provider_account_id)
-             DO UPDATE SET account_name = $4, account_avatar_url = $5, access_token = $6, token_expires_at = $7, long_lived_token = $8, instagram_account_id = $10, updated_at = NOW(), is_active = true`,
-            [uuidv4(), userId, igId, igData.username || igData.name || 'Instagram', igData.profile_picture_url || '', pageToken, tokenExpiresAt, isLongLived, pageId, igId, JSON.stringify({ username: igData.username || '' })]
+          const { error: igUpsertError } = await supabase.from('social_accounts').upsert(
+            {
+              id: uuidv4(),
+              user_id: userId,
+              provider: 'meta',
+              provider_account_id: igId,
+              account_type: 'instagram_business',
+              account_name: igData.username || igData.name || 'Instagram',
+              account_avatar_url: igData.profile_picture_url || '',
+              access_token: pageToken,
+              token_expires_at: tokenExpiresAt.toISOString(),
+              long_lived_token: isLongLived,
+              page_id: pageId,
+              instagram_account_id: igId,
+              metadata: { username: igData.username || '' },
+              is_active: true,
+            },
+            { onConflict: 'user_id,provider,provider_account_id' }
           );
+          if (igUpsertError) throw new Error(igUpsertError.message);
           connectedCount++;
         }
       }
@@ -127,16 +152,18 @@ router.post('/meta/refresh-token/:accountId', async (req: Request, res: Response
     const { accountId } = req.params;
     const userId = req.user?.id || 'unknown';
 
-    const result = await query(
-      'SELECT * FROM social_accounts WHERE id = $1 AND user_id = $2',
-      [accountId, userId]
-    );
+    const { data: account, error: fetchError } = await supabase
+      .from('social_accounts')
+      .select('*')
+      .eq('id', accountId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (result.rows.length === 0) {
+    if (!account) {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    const account = result.rows[0];
     const currentToken = account.access_token;
 
     const refreshRes = await fetch(
@@ -150,10 +177,15 @@ router.post('/meta/refresh-token/:accountId', async (req: Request, res: Response
 
     const newExpiresAt = new Date(Date.now() + (refreshData.expires_in || 5184000) * 1000);
 
-    await query(
-      'UPDATE social_accounts SET access_token = $1, token_expires_at = $2, long_lived_token = true, updated_at = NOW() WHERE id = $3',
-      [refreshData.access_token, newExpiresAt, accountId]
-    );
+    const { error: updateError } = await supabase
+      .from('social_accounts')
+      .update({
+        access_token: refreshData.access_token,
+        token_expires_at: newExpiresAt.toISOString(),
+        long_lived_token: true,
+      })
+      .eq('id', accountId);
+    if (updateError) throw new Error(updateError.message);
 
     res.json({ message: 'Token refreshed', expires_at: newExpiresAt });
   } catch (err) {

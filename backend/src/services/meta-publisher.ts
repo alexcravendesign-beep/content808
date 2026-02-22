@@ -1,4 +1,4 @@
-import { query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { config } from '../config';
 
 const GRAPH_URL = `https://graph.facebook.com/${config.meta.graphApiVersion}`;
@@ -11,30 +11,53 @@ interface PublishResult {
 }
 
 export async function publishToAccounts(postId: string): Promise<PublishResult[]> {
-  const postResult = await query('SELECT * FROM social_posts WHERE id = $1', [postId]);
-  if (postResult.rows.length === 0) throw new Error('Post not found');
-  const post = postResult.rows[0];
+  const { data: post, error: postError } = await supabase
+    .from('social_posts')
+    .select('*')
+    .eq('id', postId)
+    .maybeSingle();
+  if (postError) throw new Error(postError.message);
+  if (!post) throw new Error('Post not found');
 
-  const accountsResult = await query(
-    `SELECT spa.*, sa.account_type, sa.access_token, sa.page_id, sa.instagram_account_id, sa.provider_account_id
-     FROM social_post_accounts spa
-     JOIN social_accounts sa ON spa.social_account_id = sa.id
-     WHERE spa.social_post_id = $1`,
-    [postId]
-  );
+  // Fetch post accounts with their social account details
+  const { data: postAccounts, error: acctError } = await supabase
+    .from('social_post_accounts')
+    .select('*, social_accounts(*)')
+    .eq('social_post_id', postId);
+  if (acctError) throw new Error(acctError.message);
 
-  const mediaResult = await query(
-    `SELECT ml.* FROM social_post_media spm
-     JOIN media_library ml ON spm.media_id = ml.id
-     WHERE spm.social_post_id = $1 ORDER BY spm.sort_order`,
-    [postId]
-  );
+  // Flatten joined data so downstream code sees account_type, access_token, etc. at top level
+  const accountRows = (postAccounts || []).map((spa: Record<string, unknown>) => {
+    const sa = spa.social_accounts as Record<string, unknown> | null;
+    return {
+      id: spa.id as string,
+      social_account_id: spa.social_account_id as string,
+      platform_post_id: spa.platform_post_id as string | null,
+      platform_status: spa.platform_status as string | null,
+      platform_error: spa.platform_error as string | null,
+      account_type: (sa?.account_type ?? '') as string,
+      access_token: (sa?.access_token ?? '') as string,
+      page_id: (sa?.page_id ?? '') as string,
+      instagram_account_id: (sa?.instagram_account_id ?? '') as string,
+      provider_account_id: (sa?.provider_account_id ?? '') as string,
+    };
+  });
+
+  // Fetch media attached to the post
+  const { data: postMedia, error: mediaError } = await supabase
+    .from('social_post_media')
+    .select('*, media_library(*)')
+    .eq('social_post_id', postId)
+    .order('sort_order', { ascending: true });
+  if (mediaError) throw new Error(mediaError.message);
+
+  const mediaRows = (postMedia || []).map((spm: Record<string, unknown>) => spm.media_library as Record<string, unknown>).filter(Boolean);
 
   const results: PublishResult[] = [];
   let allSuccess = true;
   const fullCaption = post.hashtags ? `${post.caption}\n\n${post.hashtags}` : post.caption;
 
-  for (const account of accountsResult.rows) {
+  for (const account of accountRows) {
     try {
       let platformPostId: string | undefined;
 
@@ -43,50 +66,53 @@ export async function publishToAccounts(postId: string): Promise<PublishResult[]
           account.page_id || account.provider_account_id,
           account.access_token,
           fullCaption,
-          mediaResult.rows
+          mediaRows as Array<{ url: string; file_type: string }>
         );
       } else if (account.account_type === 'instagram_business') {
         platformPostId = await publishToInstagram(
           account.instagram_account_id || account.provider_account_id,
           account.access_token,
           fullCaption,
-          mediaResult.rows,
+          mediaRows as Array<{ url: string; file_type: string }>,
           post.post_type
         );
       }
 
-      await query(
-        "UPDATE social_post_accounts SET platform_status = 'published', platform_post_id = $1, published_at = NOW() WHERE id = $2",
-        [platformPostId, account.id]
-      );
+      const { error: pubUpdateErr } = await supabase
+        .from('social_post_accounts')
+        .update({ platform_status: 'published', platform_post_id: platformPostId })
+        .eq('id', account.id);
+      if (pubUpdateErr) throw new Error(pubUpdateErr.message);
 
       results.push({ accountId: account.social_account_id, success: true, platformPostId });
     } catch (err) {
       allSuccess = false;
       const errMsg = (err as Error).message;
-      await query(
-        "UPDATE social_post_accounts SET platform_status = 'failed', platform_error = $1 WHERE id = $2",
-        [errMsg, account.id]
-      );
+      const { error: failUpdateErr } = await supabase
+        .from('social_post_accounts')
+        .update({ platform_status: 'failed', platform_error: errMsg })
+        .eq('id', account.id);
+      if (failUpdateErr) console.error('Error updating account status:', failUpdateErr.message);
       results.push({ accountId: account.social_account_id, success: false, error: errMsg });
     }
   }
 
   if (allSuccess && results.length > 0) {
-    await query(
-      "UPDATE social_posts SET status = 'published', published_at = NOW(), updated_at = NOW() WHERE id = $1",
-      [postId]
-    );
+    const { error: successErr } = await supabase
+      .from('social_posts')
+      .update({ status: 'published' })
+      .eq('id', postId);
+    if (successErr) console.error('Error updating post status:', successErr.message);
   } else if (!allSuccess) {
     const anySuccess = results.some(r => r.success);
-    await query(
-      `UPDATE social_posts SET status = $1, error_message = $2, retry_count = retry_count + 1, updated_at = NOW() WHERE id = $3`,
-      [
-        anySuccess ? 'published' : 'failed',
-        results.filter(r => !r.success).map(r => r.error).join('; '),
-        postId,
-      ]
-    );
+    const { error: failErr } = await supabase
+      .from('social_posts')
+      .update({
+        status: anySuccess ? 'published' : 'failed',
+        error_message: results.filter(r => !r.success).map(r => r.error).join('; '),
+      })
+      .eq('id', postId);
+    if (failErr) console.error('Error updating post status:', failErr.message);
   }
 
   return results;
