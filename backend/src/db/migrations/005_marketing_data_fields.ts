@@ -29,6 +29,10 @@ export async function up(pool: Pool): Promise<void> {
     -- Add target_audience column
     ALTER TABLE content_items
       ADD COLUMN IF NOT EXISTS target_audience JSONB DEFAULT 'null'::jsonb;
+
+    -- Add product_id column to link back to the products table
+    ALTER TABLE content_items
+      ADD COLUMN IF NOT EXISTS product_id TEXT DEFAULT NULL;
   `);
 }
 
@@ -36,6 +40,9 @@ export async function down(pool: Pool): Promise<void> {
   await pool.query(`
     ALTER TABLE content_items
       DROP COLUMN IF EXISTS target_audience;
+
+    ALTER TABLE content_items
+      DROP COLUMN IF EXISTS product_id;
 
     ALTER TABLE content_items
       ALTER COLUMN direction TYPE TEXT

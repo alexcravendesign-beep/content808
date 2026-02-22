@@ -171,8 +171,17 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
         due_date: form.due_date || null,
         publish_date: form.publish_date || null,
         assignee: form.assignee || null,
-        target_audience: form.target_audience.length > 0 ? form.target_audience : null,
       };
+      // Only include migration-dependent fields when they have values so
+      // the request works both before and after migration 005.
+      if (form.target_audience.length > 0) {
+        payload.target_audience = form.target_audience;
+      } else {
+        delete payload.target_audience;
+      }
+      if (!form.product_id) {
+        delete payload.product_id;
+      }
       if (item) {
         await api.updateItem(item.id, payload as Partial<ContentItem>);
         toast("Item updated", "success");

@@ -45,9 +45,10 @@ router.get('/items', async (req: Request, res: Response) => {
     }
     if (search) {
       const pattern = `%${search}%`;
-      // campaign_goal and direction are now JSONB — cast to text for search
-      countQuery = countQuery.or(`brand.ilike.${pattern},campaign_goal::text.ilike.${pattern},direction::text.ilike.${pattern}`);
-      dataQuery = dataQuery.or(`brand.ilike.${pattern},campaign_goal::text.ilike.${pattern},direction::text.ilike.${pattern}`);
+      // campaign_goal and direction may be TEXT (pre-migration) or JSONB (post-migration)
+      // ilike works on both types; ::text cast is only needed for JSONB but breaks on TEXT
+      countQuery = countQuery.or(`brand.ilike.${pattern},campaign_goal.ilike.${pattern},direction.ilike.${pattern}`);
+      dataQuery = dataQuery.or(`brand.ilike.${pattern},campaign_goal.ilike.${pattern},direction.ilike.${pattern}`);
     }
 
     const { count, error: countError } = await countQuery;
@@ -115,22 +116,21 @@ router.post(
       const id = uuidv4();
       const {
         brand, product_url = '', product_title = '', product_image_url = '',
-        product_id = null, campaign_goal = null, direction = null,
-        target_audience = null,
+        product_id, campaign_goal = null, direction = null,
+        target_audience,
         pivot_notes = '', platform = '', due_date = null,
         publish_date = null, assignee = null
       } = req.body;
 
-      const { error: insertError } = await supabase.from('content_items').insert({
+      // Base insert object (columns that always exist)
+      const baseInsert: Record<string, unknown> = {
         id,
         brand,
         product_url,
         product_title,
         product_image_url,
-        product_id,
         campaign_goal,
         direction,
-        target_audience,
         pivot_notes,
         platform,
         status: 'idea',
@@ -138,7 +138,19 @@ router.post(
         publish_date,
         assignee,
         created_by: req.user!.id,
-      });
+      };
+
+      // Try inserting with migration-dependent columns first; if the schema
+      // hasn't been migrated yet (columns don't exist), retry without them.
+      const fullInsert: Record<string, unknown> = { ...baseInsert };
+      if (product_id !== undefined) fullInsert.product_id = product_id;
+      if (target_audience !== undefined) fullInsert.target_audience = target_audience;
+
+      let { error: insertError } = await supabase.from('content_items').insert(fullInsert);
+      if (insertError?.message?.includes('column') && insertError.message.includes('schema cache')) {
+        // Migration 005 hasn't been applied yet — retry without new columns
+        ({ error: insertError } = await supabase.from('content_items').insert(baseInsert));
+      }
       if (insertError) throw new Error(insertError.message);
 
       await logAudit({
@@ -189,23 +201,45 @@ router.put(
         return res.status(404).json({ error: 'Item not found' });
       }
 
-      const fields = ['brand', 'product_url', 'product_title', 'product_image_url', 'product_id', 'campaign_goal', 'direction', 'target_audience', 'pivot_notes', 'platform', 'due_date', 'publish_date', 'assignee'];
+      // Base fields that always exist; migration-dependent fields (product_id,
+      // target_audience) are only included when the caller sends them so the
+      // update works both before and after migration 005.
+      const baseFields = ['brand', 'product_url', 'product_title', 'product_image_url', 'campaign_goal', 'direction', 'pivot_notes', 'platform', 'due_date', 'publish_date', 'assignee'];
+      const migrationFields = ['product_id', 'target_audience'];
       const updateObj: Record<string, unknown> = {};
 
-      for (const field of fields) {
+      for (const field of baseFields) {
         if (req.body[field] !== undefined) {
           updateObj[field] = req.body[field];
         }
       }
+      const migrationObj: Record<string, unknown> = {};
+      for (const field of migrationFields) {
+        if (req.body[field] !== undefined) {
+          migrationObj[field] = req.body[field];
+        }
+      }
 
-      if (Object.keys(updateObj).length === 0) {
+      const fullUpdateObj = { ...updateObj, ...migrationObj };
+      if (Object.keys(fullUpdateObj).length === 0) {
         return res.status(400).json({ error: 'No fields to update' });
       }
 
-      const { error: updateError } = await supabase
+      // Try with migration-dependent columns; if schema hasn't been
+      // migrated yet, retry without them.
+      let { error: updateError } = await supabase
         .from('content_items')
-        .update(updateObj)
+        .update(fullUpdateObj)
         .eq('id', req.params.id);
+      if (updateError?.message?.includes('column') && updateError.message.includes('schema cache')) {
+        if (Object.keys(updateObj).length === 0) {
+          return res.status(400).json({ error: 'No fields to update (migration pending)' });
+        }
+        ({ error: updateError } = await supabase
+          .from('content_items')
+          .update(updateObj)
+          .eq('id', req.params.id));
+      }
       if (updateError) throw new Error(updateError.message);
 
       await logAudit({
@@ -214,7 +248,7 @@ router.put(
         action: 'update',
         actor: req.user!.id,
         actorRole: req.user!.role,
-        details: { updated_fields: Object.keys(req.body).filter(k => fields.includes(k)) },
+        details: { updated_fields: Object.keys(req.body).filter(k => [...baseFields, ...migrationFields].includes(k)) },
       });
 
       const { data } = await supabase.from('content_items').select('*').eq('id', req.params.id).single();
