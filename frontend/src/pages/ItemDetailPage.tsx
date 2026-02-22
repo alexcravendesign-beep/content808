@@ -157,18 +157,23 @@ export function ItemDetailPage() {
         </div>
 
         {item.direction && <DirectionDisplay value={item.direction} />}
-        {item.target_audience && Array.isArray(item.target_audience) && item.target_audience.length > 0 && (
-          <div className="mb-3">
-            <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Target Audience</label>
-            <div className="flex flex-wrap gap-1.5">
-              {item.target_audience.map((a: string, i: number) => (
-                <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-400 font-medium">
-                  {a}
-                </span>
-              ))}
+        {item.target_audience && (() => {
+          const parsed = tryParseJson(item.target_audience);
+          const audiences = Array.isArray(parsed) ? parsed : [];
+          if (audiences.length === 0) return null;
+          return (
+            <div className="mb-3">
+              <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Target Audience</label>
+              <div className="flex flex-wrap gap-1.5">
+                {audiences.map((a: string, i: number) => (
+                  <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-400 font-medium">
+                    {a}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
         {item.pivot_notes && (
           <div className="mb-3">
             <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Pivot Notes</label>
@@ -362,20 +367,41 @@ function InfoField({ icon: Icon, label, value }: { icon: React.ElementType; labe
   );
 }
 
-/** Display campaign_goal — handles both old string and new JSON formats */
+/** Try to parse a value that may be a JSON string, an object, or a plain string */
+function tryParseJson(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'object') return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try { return JSON.parse(trimmed); } catch { /* not valid JSON */ }
+    }
+  }
+  return value;
+}
+
+/** Display campaign_goal — handles old string, JSON string, and object formats */
 function CampaignGoalDisplay({ value }: { value: string | Record<string, unknown> | null }) {
   const [expanded, setExpanded] = useState(false);
 
   if (!value) return null;
 
-  // Old format: plain text string
-  if (typeof value === "string") {
-    return <p className="text-sm text-[hsl(var(--th-text-secondary))] mb-3">{value}</p>;
+  // Try to parse JSON strings into objects
+  const parsed = tryParseJson(value);
+
+  // Plain text string (old format or unparseable)
+  if (typeof parsed === 'string') {
+    // Skip displaying "[object Object]" — this is corrupted data
+    if (parsed === '[object Object]') return null;
+    return <p className="text-sm text-[hsl(var(--th-text-secondary))] mb-3">{parsed}</p>;
   }
 
+  if (typeof parsed !== 'object' || parsed === null) return null;
+
   // New format: { title, content } object
-  const title = typeof value.title === "string" ? value.title : "";
-  const content = typeof value.content === "string" ? value.content : "";
+  const obj = parsed as Record<string, unknown>;
+  const title = typeof obj.title === "string" ? obj.title : "";
+  const content = typeof obj.content === "string" ? obj.content : "";
 
   if (!title && !content) return null;
 
@@ -396,23 +422,31 @@ function CampaignGoalDisplay({ value }: { value: string | Record<string, unknown
   );
 }
 
-/** Display direction — handles both old string and new JSON formats */
+/** Display direction — handles old string, JSON string, and object formats */
 function DirectionDisplay({ value }: { value: string | Record<string, unknown> | null }) {
   if (!value) return null;
 
-  // Old format: plain text string
-  if (typeof value === "string") {
+  // Try to parse JSON strings into objects
+  const parsed = tryParseJson(value);
+
+  // Plain text string (old format or unparseable)
+  if (typeof parsed === 'string') {
+    // Skip displaying "[object Object]" — this is corrupted data
+    if (parsed === '[object Object]') return null;
     return (
       <div className="mb-3">
         <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Direction</label>
-        <p className="text-sm text-[hsl(var(--th-text-secondary))]">{value}</p>
+        <p className="text-sm text-[hsl(var(--th-text-secondary))]">{parsed}</p>
       </div>
     );
   }
 
+  if (typeof parsed !== 'object' || parsed === null) return null;
+
   // New format: { benefits: string[], pain_points: string[] }
-  const benefits = Array.isArray(value.benefits) ? (value.benefits as string[]) : [];
-  const painPoints = Array.isArray(value.pain_points) ? (value.pain_points as string[]) : [];
+  const obj = parsed as Record<string, unknown>;
+  const benefits = Array.isArray(obj.benefits) ? (obj.benefits as string[]) : [];
+  const painPoints = Array.isArray(obj.pain_points) ? (obj.pain_points as string[]) : [];
 
   if (benefits.length === 0 && painPoints.length === 0) return null;
 
