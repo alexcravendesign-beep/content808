@@ -47,39 +47,54 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
   /** Full product data for populating marketing fields */
   const [selectedProductData, setSelectedProductData] = useState<Product | null>(null);
 
+  /** Try to parse a value that may be a JSON string, an object, or a plain string */
+  const tryParseJson = (value: unknown): unknown => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'object') return value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try { return JSON.parse(trimmed); } catch { /* not valid JSON */ }
+      }
+    }
+    return value;
+  };
+
   useEffect(() => {
     if (item) {
-      // Parse campaign_goal: handle both old string and new JSON formats
+      // Parse campaign_goal: handle old string, JSON string, and object formats
       let campaignGoal: CampaignGoalValue | null = null;
       if (item.campaign_goal) {
-        if (typeof item.campaign_goal === "string") {
-          // Old format: plain text string - leave as null (user can re-select)
-          campaignGoal = null;
-        } else if (typeof item.campaign_goal === "object" && item.campaign_goal !== null) {
-          const cg = item.campaign_goal as Record<string, unknown>;
+        const parsed = tryParseJson(item.campaign_goal);
+        if (typeof parsed === "object" && parsed !== null) {
+          const cg = parsed as Record<string, unknown>;
           if (cg.title && cg.content) {
             campaignGoal = { title: String(cg.title), content: String(cg.content) };
           }
         }
+        // Old plain text strings or "[object Object]" → leave as null
       }
 
-      // Parse direction: handle both old string and new JSON formats
+      // Parse direction: handle old string, JSON string, and object formats
       let direction: DirectionValue | null = null;
       if (item.direction) {
-        if (typeof item.direction === "string") {
-          // Old format: plain text string - leave as null
-          direction = null;
-        } else if (typeof item.direction === "object" && item.direction !== null) {
-          const dir = item.direction as Record<string, unknown>;
+        const parsed = tryParseJson(item.direction);
+        if (typeof parsed === "object" && parsed !== null) {
+          const dir = parsed as Record<string, unknown>;
           direction = {
             benefits: Array.isArray(dir.benefits) ? (dir.benefits as string[]) : [],
             pain_points: Array.isArray(dir.pain_points) ? (dir.pain_points as string[]) : [],
           };
         }
+        // Old plain text strings or "[object Object]" → leave as null
       }
 
-      // Parse target_audience
-      const targetAudience = Array.isArray(item.target_audience) ? item.target_audience : [];
+      // Parse target_audience (may also be a JSON string in TEXT columns)
+      let targetAudience: string[] = [];
+      if (item.target_audience) {
+        const parsed = tryParseJson(item.target_audience);
+        targetAudience = Array.isArray(parsed) ? parsed : [];
+      }
 
       setForm({
         brand: item.brand || "",

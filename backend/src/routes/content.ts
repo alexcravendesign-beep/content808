@@ -122,6 +122,15 @@ router.post(
         publish_date = null, assignee = null
       } = req.body;
 
+      // Ensure JSON fields are stored as proper JSON strings when the
+      // underlying column is still TEXT (pre-migration 005).  If the column
+      // has already been converted to JSONB the string will still be valid.
+      const safeJsonField = (v: unknown): string | null => {
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'string') return v;
+        return JSON.stringify(v);
+      };
+
       // Base insert object (columns that always exist)
       const baseInsert: Record<string, unknown> = {
         id,
@@ -129,8 +138,8 @@ router.post(
         product_url,
         product_title,
         product_image_url,
-        campaign_goal,
-        direction,
+        campaign_goal: safeJsonField(campaign_goal),
+        direction: safeJsonField(direction),
         pivot_notes,
         platform,
         status: 'idea',
@@ -208,9 +217,19 @@ router.put(
       const migrationFields = ['product_id', 'target_audience'];
       const updateObj: Record<string, unknown> = {};
 
+      // Fields that must be JSON-stringified for TEXT columns (pre-migration)
+      const jsonFields = ['campaign_goal', 'direction'];
+      const safeJsonField = (v: unknown): string | null => {
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'string') return v;
+        return JSON.stringify(v);
+      };
+
       for (const field of baseFields) {
         if (req.body[field] !== undefined) {
-          updateObj[field] = req.body[field];
+          updateObj[field] = jsonFields.includes(field)
+            ? safeJsonField(req.body[field])
+            : req.body[field];
         }
       }
       const migrationObj: Record<string, unknown> = {};
