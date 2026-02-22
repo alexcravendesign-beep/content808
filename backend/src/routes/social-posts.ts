@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { supabase, query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { logAudit } from '../services/audit';
 
@@ -13,45 +13,61 @@ router.get('/social/posts', async (req: Request, res: Response) => {
     const pageLimit = Math.min(parseInt(limitParam as string) || 50, 200);
     const pageOffset = parseInt(offsetParam as string) || 0;
 
-    // Complex JOINs with aggregations require raw SQL via exec_sql RPC
-    let sql = `SELECT sp.*,
-      COALESCE(
-        json_agg(DISTINCT jsonb_build_object('id', ml.id, 'url', ml.url, 'thumbnail_url', ml.thumbnail_url, 'file_type', ml.file_type, 'file_name', ml.file_name)) FILTER (WHERE ml.id IS NOT NULL),
-        '[]'
-      ) as media,
-      COALESCE(
-        json_agg(DISTINCT jsonb_build_object('id', spa.id, 'social_account_id', spa.social_account_id, 'platform_post_id', spa.platform_post_id, 'platform_status', spa.platform_status, 'platform_error', spa.platform_error, 'published_at', spa.published_at, 'account_name', sa.account_name, 'account_type', sa.account_type, 'account_avatar_url', sa.account_avatar_url)) FILTER (WHERE spa.id IS NOT NULL),
-        '[]'
-      ) as target_accounts
-    FROM social_posts sp
-    LEFT JOIN social_post_media spm ON sp.id = spm.social_post_id
-    LEFT JOIN media_library ml ON spm.media_id = ml.id
-    LEFT JOIN social_post_accounts spa ON sp.id = spa.social_post_id
-    LEFT JOIN social_accounts sa ON spa.social_account_id = sa.id
-    WHERE sp.user_id = $1`;
-
-    const params: unknown[] = [userId];
-    let idx = 2;
+    // Use Supabase embedded resources for JOINs
+    let postsQuery = supabase
+      .from('social_posts')
+      .select(`
+        *,
+        social_post_media(*, media_library(*)),
+        social_post_accounts(*, social_accounts(*))
+      `, { count: 'exact' })
+      .eq('user_id', userId)
+      .order('scheduled_at', { ascending: false, nullsFirst: false })
+      .range(pageOffset, pageOffset + pageLimit - 1);
 
     if (status) {
-      sql += ` AND sp.status = $${idx++}`;
-      params.push(status);
+      postsQuery = postsQuery.eq('status', String(status));
     }
 
-    sql += ` GROUP BY sp.id ORDER BY COALESCE(sp.scheduled_at, sp.created_at) DESC`;
-    sql += ` LIMIT $${idx++} OFFSET $${idx++}`;
-    params.push(pageLimit, pageOffset);
+    const { data: postsData, count, error: postsError } = await postsQuery;
+    if (postsError) throw new Error(postsError.message);
 
-    const result = await query(sql, params);
+    // Transform embedded data to match expected response shape
+    const posts = (postsData || []).map((sp: Record<string, unknown>) => {
+      const spmArr = (sp.social_post_media || []) as Array<Record<string, unknown>>;
+      const spaArr = (sp.social_post_accounts || []) as Array<Record<string, unknown>>;
 
-    const countResult = await query(
-      `SELECT COUNT(*)::int as count FROM social_posts WHERE user_id = $1${status ? ' AND status = $2' : ''}`,
-      status ? [userId, status] : [userId]
-    );
+      const media = spmArr
+        .filter((spm) => spm.media_library)
+        .map((spm) => {
+          const ml = spm.media_library as Record<string, unknown>;
+          return { id: ml.id, url: ml.url, thumbnail_url: ml.thumbnail_url, file_type: ml.file_type, file_name: ml.file_name };
+        });
+
+      const target_accounts = spaArr.map((spa) => {
+        const sa = (spa.social_accounts || {}) as Record<string, unknown>;
+        return {
+          id: spa.id,
+          social_account_id: spa.social_account_id,
+          platform_post_id: spa.platform_post_id,
+          platform_status: spa.platform_status,
+          platform_error: spa.platform_error,
+          published_at: spa.published_at,
+          account_name: sa.account_name,
+          account_type: sa.account_type,
+          account_avatar_url: sa.account_avatar_url,
+        };
+      });
+
+      // Remove nested relation keys, add flattened arrays
+      const { social_post_media: _m, social_post_accounts: _a, ...rest } = sp;
+      void _m; void _a;
+      return { ...rest, media, target_accounts };
+    });
 
     res.json({
-      posts: result.rows,
-      total: countResult.rows[0]?.count ?? 0,
+      posts,
+      total: count ?? 0,
       limit: pageLimit,
       offset: pageOffset,
     });
@@ -64,32 +80,47 @@ router.get('/social/posts', async (req: Request, res: Response) => {
 router.get('/social/posts/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    // Complex JOIN query – use raw SQL via RPC wrapper
-    const result = await query(
-      `SELECT sp.*,
-        COALESCE(
-          json_agg(DISTINCT jsonb_build_object('id', ml.id, 'url', ml.url, 'thumbnail_url', ml.thumbnail_url, 'file_type', ml.file_type, 'file_name', ml.file_name, 'sort_order', spm.sort_order)) FILTER (WHERE ml.id IS NOT NULL),
-          '[]'
-        ) as media,
-        COALESCE(
-          json_agg(DISTINCT jsonb_build_object('id', spa.id, 'social_account_id', spa.social_account_id, 'platform_post_id', spa.platform_post_id, 'platform_status', spa.platform_status, 'platform_error', spa.platform_error, 'published_at', spa.published_at, 'account_name', sa.account_name, 'account_type', sa.account_type, 'account_avatar_url', sa.account_avatar_url)) FILTER (WHERE spa.id IS NOT NULL),
-          '[]'
-        ) as target_accounts
-      FROM social_posts sp
-      LEFT JOIN social_post_media spm ON sp.id = spm.social_post_id
-      LEFT JOIN media_library ml ON spm.media_id = ml.id
-      LEFT JOIN social_post_accounts spa ON sp.id = spa.social_post_id
-      LEFT JOIN social_accounts sa ON spa.social_account_id = sa.id
-      WHERE sp.id = $1 AND sp.user_id = $2
-      GROUP BY sp.id`,
-      [req.params.id, userId]
-    );
 
-    if (result.rows.length === 0) {
+    const { data: sp, error: fetchError } = await supabase
+      .from('social_posts')
+      .select(`
+        *,
+        social_post_media(*, media_library(*)),
+        social_post_accounts(*, social_accounts(*))
+      `)
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
+
+    if (!sp) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    res.json(result.rows[0]);
+    // Transform embedded data to match expected response shape
+    const spmArr = ((sp as Record<string, unknown>).social_post_media || []) as Array<Record<string, unknown>>;
+    const spaArr = ((sp as Record<string, unknown>).social_post_accounts || []) as Array<Record<string, unknown>>;
+
+    const media = spmArr
+      .filter((spm) => spm.media_library)
+      .map((spm) => {
+        const ml = spm.media_library as Record<string, unknown>;
+        return { id: ml.id, url: ml.url, thumbnail_url: ml.thumbnail_url, file_type: ml.file_type, file_name: ml.file_name, sort_order: spm.sort_order };
+      });
+
+    const target_accounts = spaArr.map((spa) => {
+      const sa = (spa.social_accounts || {}) as Record<string, unknown>;
+      return {
+        id: spa.id, social_account_id: spa.social_account_id,
+        platform_post_id: spa.platform_post_id, platform_status: spa.platform_status,
+        platform_error: spa.platform_error, published_at: spa.published_at,
+        account_name: sa.account_name, account_type: sa.account_type, account_avatar_url: sa.account_avatar_url,
+      };
+    });
+
+    const { social_post_media: _m2, social_post_accounts: _a2, ...rest } = sp as Record<string, unknown>;
+    void _m2; void _a2;
+    res.json({ ...rest, media, target_accounts });
   } catch (err) {
     console.error('Error fetching social post:', err);
     res.status(500).json({ error: 'Failed to fetch social post' });

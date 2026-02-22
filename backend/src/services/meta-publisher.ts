@@ -1,4 +1,4 @@
-import { supabase, query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { config } from '../config';
 
 const GRAPH_URL = `https://graph.facebook.com/${config.meta.graphApiVersion}`;
@@ -19,28 +19,45 @@ export async function publishToAccounts(postId: string): Promise<PublishResult[]
   if (postError) throw new Error(postError.message);
   if (!post) throw new Error('Post not found');
 
-  // Complex JOIN – use raw SQL via RPC wrapper
-  const accountsResult = await query(
-    `SELECT spa.*, sa.account_type, sa.access_token, sa.page_id, sa.instagram_account_id, sa.provider_account_id
-     FROM social_post_accounts spa
-     JOIN social_accounts sa ON spa.social_account_id = sa.id
-     WHERE spa.social_post_id = $1`,
-    [postId]
-  );
+  // Fetch post accounts with their social account details
+  const { data: postAccounts, error: acctError } = await supabase
+    .from('social_post_accounts')
+    .select('*, social_accounts(*)')
+    .eq('social_post_id', postId);
+  if (acctError) throw new Error(acctError.message);
 
-  // Complex JOIN – use raw SQL via RPC wrapper
-  const mediaResult = await query(
-    `SELECT ml.* FROM social_post_media spm
-     JOIN media_library ml ON spm.media_id = ml.id
-     WHERE spm.social_post_id = $1 ORDER BY spm.sort_order`,
-    [postId]
-  );
+  // Flatten joined data so downstream code sees account_type, access_token, etc. at top level
+  const accountRows = (postAccounts || []).map((spa: Record<string, unknown>) => {
+    const sa = spa.social_accounts as Record<string, unknown> | null;
+    return {
+      id: spa.id as string,
+      social_account_id: spa.social_account_id as string,
+      platform_post_id: spa.platform_post_id as string | null,
+      platform_status: spa.platform_status as string | null,
+      platform_error: spa.platform_error as string | null,
+      account_type: (sa?.account_type ?? '') as string,
+      access_token: (sa?.access_token ?? '') as string,
+      page_id: (sa?.page_id ?? '') as string,
+      instagram_account_id: (sa?.instagram_account_id ?? '') as string,
+      provider_account_id: (sa?.provider_account_id ?? '') as string,
+    };
+  });
+
+  // Fetch media attached to the post
+  const { data: postMedia, error: mediaError } = await supabase
+    .from('social_post_media')
+    .select('*, media_library(*)')
+    .eq('social_post_id', postId)
+    .order('sort_order', { ascending: true });
+  if (mediaError) throw new Error(mediaError.message);
+
+  const mediaRows = (postMedia || []).map((spm: Record<string, unknown>) => spm.media_library as Record<string, unknown>).filter(Boolean);
 
   const results: PublishResult[] = [];
   let allSuccess = true;
   const fullCaption = post.hashtags ? `${post.caption}\n\n${post.hashtags}` : post.caption;
 
-  for (const account of accountsResult.rows) {
+  for (const account of accountRows) {
     try {
       let platformPostId: string | undefined;
 
@@ -49,14 +66,14 @@ export async function publishToAccounts(postId: string): Promise<PublishResult[]
           account.page_id || account.provider_account_id,
           account.access_token,
           fullCaption,
-          mediaResult.rows
+          mediaRows as Array<{ url: string; file_type: string }>
         );
       } else if (account.account_type === 'instagram_business') {
         platformPostId = await publishToInstagram(
           account.instagram_account_id || account.provider_account_id,
           account.access_token,
           fullCaption,
-          mediaResult.rows,
+          mediaRows as Array<{ url: string; file_type: string }>,
           post.post_type
         );
       }

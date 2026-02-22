@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { supabase, query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { config } from '../config';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -11,29 +11,45 @@ router.get('/social/analytics', async (req: Request, res: Response) => {
     const userId = req.user?.id || 'unknown';
     const { post_id, account_id } = req.query;
 
-    // Complex JOIN query – use raw SQL via RPC wrapper
-    let sql = `SELECT spa.*, sp.caption, sp.post_type, sp.published_at as post_published_at,
-                      sa.account_name, sa.account_type, sa.account_avatar_url
-               FROM social_post_analytics spa
-               JOIN social_posts sp ON spa.social_post_id = sp.id
-               JOIN social_accounts sa ON spa.social_account_id = sa.id
-               WHERE sp.user_id = $1`;
-    const params: unknown[] = [userId];
-    let idx = 2;
+    // Use Supabase embedded resources for JOINs
+    let analyticsQuery = supabase
+      .from('social_post_analytics')
+      .select(`
+        *,
+        social_posts!inner(caption, post_type, published_at, user_id),
+        social_accounts(account_name, account_type, account_avatar_url)
+      `)
+      .eq('social_posts.user_id', userId)
+      .order('fetched_at', { ascending: false });
 
     if (post_id) {
-      sql += ` AND spa.social_post_id = $${idx++}`;
-      params.push(post_id);
+      analyticsQuery = analyticsQuery.eq('social_post_id', String(post_id));
     }
     if (account_id) {
-      sql += ` AND spa.social_account_id = $${idx++}`;
-      params.push(account_id);
+      analyticsQuery = analyticsQuery.eq('social_account_id', String(account_id));
     }
 
-    sql += ' ORDER BY spa.fetched_at DESC';
+    const { data: analyticsData, error: analyticsError } = await analyticsQuery;
+    if (analyticsError) throw new Error(analyticsError.message);
 
-    const result = await query(sql, params);
-    res.json({ analytics: result.rows });
+    // Flatten embedded data to match expected shape
+    const analytics = (analyticsData || []).map((row: Record<string, unknown>) => {
+      const sp = (row.social_posts || {}) as Record<string, unknown>;
+      const sa = (row.social_accounts || {}) as Record<string, unknown>;
+      const { social_posts: _ignorePost, social_accounts: _ignoreAcct, ...rest } = row;
+      void _ignorePost; void _ignoreAcct;
+      return {
+        ...rest,
+        caption: sp.caption,
+        post_type: sp.post_type,
+        post_published_at: sp.published_at,
+        account_name: sa.account_name,
+        account_type: sa.account_type,
+        account_avatar_url: sa.account_avatar_url,
+      };
+    });
+
+    res.json({ analytics });
   } catch (err) {
     console.error('Error fetching analytics:', err);
     res.status(500).json({ error: 'Failed to fetch analytics' });
@@ -44,71 +60,100 @@ router.get('/social/analytics/summary', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
 
-    // Complex aggregation queries – use raw SQL via RPC wrapper
-    const totalPosts = await query(
-      "SELECT COUNT(*)::int as count FROM social_posts WHERE user_id = $1 AND status = 'published'",
-      [userId]
-    );
+    // Count published posts
+    const { count: publishedCount, error: countError } = await supabase
+      .from('social_posts')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'published');
+    if (countError) throw new Error(countError.message);
 
-    const totalEngagement = await query(
-      `SELECT COALESCE(SUM(impressions), 0)::int as total_impressions,
-              COALESCE(SUM(reach), 0)::int as total_reach,
-              COALESCE(SUM(engagement), 0)::int as total_engagement,
-              COALESCE(SUM(likes), 0)::int as total_likes,
-              COALESCE(SUM(comments), 0)::int as total_comments,
-              COALESCE(SUM(shares), 0)::int as total_shares,
-              COALESCE(SUM(saves), 0)::int as total_saves,
-              COALESCE(SUM(clicks), 0)::int as total_clicks
-       FROM social_post_analytics spa
-       JOIN social_posts sp ON spa.social_post_id = sp.id
-       WHERE sp.user_id = $1`,
-      [userId]
-    );
+    // Fetch all analytics rows for this user's posts to aggregate in JS
+    const { data: allAnalytics, error: engError } = await supabase
+      .from('social_post_analytics')
+      .select(`
+        *,
+        social_posts!inner(user_id),
+        social_accounts(account_type)
+      `)
+      .eq('social_posts.user_id', userId);
+    if (engError) throw new Error(engError.message);
 
-    const byPlatform = await query(
-      `SELECT sa.account_type,
-              COUNT(DISTINCT sp.id)::int as post_count,
-              COALESCE(SUM(spa.impressions), 0)::int as impressions,
-              COALESCE(SUM(spa.reach), 0)::int as reach,
-              COALESCE(SUM(spa.engagement), 0)::int as engagement
-       FROM social_post_analytics spa
-       JOIN social_posts sp ON spa.social_post_id = sp.id
-       JOIN social_accounts sa ON spa.social_account_id = sa.id
-       WHERE sp.user_id = $1
-       GROUP BY sa.account_type`,
-      [userId]
-    );
+    const rows = allAnalytics || [];
 
-    const recentPosts = await query(
-      `SELECT sp.id, sp.caption, sp.post_type, sp.published_at,
-              COALESCE(SUM(spa.impressions), 0)::int as impressions,
-              COALESCE(SUM(spa.reach), 0)::int as reach,
-              COALESCE(SUM(spa.engagement), 0)::int as engagement,
-              COALESCE(SUM(spa.likes), 0)::int as likes
-       FROM social_posts sp
-       LEFT JOIN social_post_analytics spa ON sp.id = spa.social_post_id
-       WHERE sp.user_id = $1 AND sp.status = 'published'
-       GROUP BY sp.id
-       ORDER BY sp.published_at DESC
-       LIMIT 10`,
-      [userId]
-    );
+    // Aggregate totals
+    let total_impressions = 0, total_reach = 0, total_engagement = 0;
+    let total_likes = 0, total_comments = 0, total_shares = 0, total_saves = 0, total_clicks = 0;
+    for (const r of rows) {
+      total_impressions += (r.impressions as number) || 0;
+      total_reach += (r.reach as number) || 0;
+      total_engagement += (r.engagement as number) || 0;
+      total_likes += (r.likes as number) || 0;
+      total_comments += (r.comments as number) || 0;
+      total_shares += (r.shares as number) || 0;
+      total_saves += (r.saves as number) || 0;
+      total_clicks += (r.clicks as number) || 0;
+    }
 
-    const statusCounts = await query(
-      `SELECT status, COUNT(*)::int as count FROM social_posts WHERE user_id = $1 GROUP BY status`,
-      [userId]
-    );
+    // Aggregate by platform
+    const platformMap: Record<string, { post_count: Set<string>; impressions: number; reach: number; engagement: number }> = {};
+    for (const r of rows) {
+      const sa = (r as Record<string, unknown>).social_accounts as Record<string, unknown> | null;
+      const acctType = (sa?.account_type as string) || 'unknown';
+      if (!platformMap[acctType]) platformMap[acctType] = { post_count: new Set(), impressions: 0, reach: 0, engagement: 0 };
+      platformMap[acctType].post_count.add(r.social_post_id as string);
+      platformMap[acctType].impressions += (r.impressions as number) || 0;
+      platformMap[acctType].reach += (r.reach as number) || 0;
+      platformMap[acctType].engagement += (r.engagement as number) || 0;
+    }
+    const by_platform = Object.entries(platformMap).map(([account_type, v]) => ({
+      account_type,
+      post_count: v.post_count.size,
+      impressions: v.impressions,
+      reach: v.reach,
+      engagement: v.engagement,
+    }));
+
+    // Recent published posts with analytics
+    const { data: recentPostsData, error: recentError } = await supabase
+      .from('social_posts')
+      .select('id, caption, post_type, published_at, social_post_analytics(*)')
+      .eq('user_id', userId)
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(10);
+    if (recentError) throw new Error(recentError.message);
+
+    const recent_posts = (recentPostsData || []).map((sp: Record<string, unknown>) => {
+      const analyticsArr = (sp.social_post_analytics || []) as Array<Record<string, number>>;
+      let impressions = 0, reach = 0, engagement = 0, likes = 0;
+      for (const a of analyticsArr) {
+        impressions += a.impressions || 0;
+        reach += a.reach || 0;
+        engagement += a.engagement || 0;
+        likes += a.likes || 0;
+      }
+      return { id: sp.id, caption: sp.caption, post_type: sp.post_type, published_at: sp.published_at, impressions, reach, engagement, likes };
+    });
+
+    // Status counts
+    const { data: allPosts, error: postsError } = await supabase
+      .from('social_posts')
+      .select('status')
+      .eq('user_id', userId);
+    if (postsError) throw new Error(postsError.message);
 
     const byStatus: Record<string, number> = {};
-    for (const row of statusCounts.rows) {
-      byStatus[row.status] = row.count;
+    for (const p of allPosts || []) {
+      byStatus[p.status as string] = (byStatus[p.status as string] || 0) + 1;
     }
 
     res.json({
-      total_published: totalPosts.rows[0]?.count ?? 0,
-      ...totalEngagement.rows[0],
-      by_platform: byPlatform.rows,
-      recent_posts: recentPosts.rows,
+      total_published: publishedCount ?? 0,
+      total_impressions, total_reach, total_engagement,
+      total_likes, total_comments, total_shares, total_saves, total_clicks,
+      by_platform,
+      recent_posts,
       by_status: byStatus,
     });
   } catch (err) {
@@ -135,18 +180,33 @@ router.post('/social/analytics/fetch/:postId', async (req: Request, res: Respons
       return res.status(404).json({ error: 'Published post not found' });
     }
 
-    // Complex JOIN – use raw SQL via RPC wrapper
-    const accountsResult = await query(
-      `SELECT spa.*, sa.account_type, sa.access_token, sa.page_id, sa.instagram_account_id
-       FROM social_post_accounts spa
-       JOIN social_accounts sa ON spa.social_account_id = sa.id
-       WHERE spa.social_post_id = $1 AND spa.platform_status = 'published'`,
-      [postId]
-    );
+    // Fetch post accounts with their social account details using embedded resources
+    const { data: postAccounts, error: acctError } = await supabase
+      .from('social_post_accounts')
+      .select('*, social_accounts(account_type, access_token, page_id, instagram_account_id)')
+      .eq('social_post_id', postId)
+      .eq('platform_status', 'published');
+    if (acctError) throw new Error(acctError.message);
+
+    // Flatten joined data
+    const accountRows = (postAccounts || []).map((spa: Record<string, unknown>) => {
+      const sa = spa.social_accounts as Record<string, unknown> | null;
+      return {
+        id: spa.id as string,
+        social_account_id: spa.social_account_id as string,
+        social_post_id: spa.social_post_id as string,
+        platform_post_id: spa.platform_post_id as string | null,
+        platform_status: spa.platform_status as string | null,
+        account_type: (sa?.account_type ?? '') as string,
+        access_token: (sa?.access_token ?? '') as string,
+        page_id: (sa?.page_id ?? '') as string,
+        instagram_account_id: (sa?.instagram_account_id ?? '') as string,
+      };
+    });
 
     const results = [];
 
-    for (const account of accountsResult.rows) {
+    for (const account of accountRows) {
       try {
         let metrics = { impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0, saves: 0, clicks: 0 };
 

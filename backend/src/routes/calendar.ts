@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { supabase, query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { logAudit } from '../services/audit';
 
 const router = Router();
@@ -37,46 +37,55 @@ router.get('/calendar', async (req: Request, res: Response) => {
     const { data: contentData, error: contentError } = await contentQuery;
     if (contentError) throw new Error(contentError.message);
 
-    // Social posts query – complex JOINs require raw SQL via exec_sql RPC
-    let socialSql = `SELECT sp.id, sp.caption as brand, '' as product_url, sp.post_type as campaign_goal,
-           '' as direction, '' as pivot_notes,
-           CASE WHEN EXISTS (SELECT 1 FROM social_post_accounts spa JOIN social_accounts sa ON spa.social_account_id = sa.id WHERE spa.social_post_id = sp.id AND sa.account_type = 'instagram_business') THEN 'instagram'
-                WHEN EXISTS (SELECT 1 FROM social_post_accounts spa JOIN social_accounts sa ON spa.social_account_id = sa.id WHERE spa.social_post_id = sp.id AND sa.account_type = 'facebook_page') THEN 'facebook'
-                ELSE 'facebook' END as platform,
-           sp.status, NULL as due_date, sp.scheduled_at as publish_date,
-           sp.user_id as assignee, sp.user_id as created_by, sp.created_at, sp.updated_at,
-           '' as product_title, '' as product_image_url, NULL as product_id, sp.caption as final_copy,
-           'social_post' as item_type, sp.post_type, sp.hashtags
-    FROM social_posts sp WHERE sp.scheduled_at IS NOT NULL`;
-    const socialParams: unknown[] = [];
-    let sIdx = 1;
-
-    if (start) {
-      socialSql += ` AND sp.scheduled_at >= $${sIdx++}`;
-      socialParams.push(start);
-    }
-    if (end) {
-      socialSql += ` AND sp.scheduled_at <= $${sIdx++}`;
-      socialParams.push(end);
-    }
-    if (platform) {
-      if (platform === 'instagram') {
-        socialSql += ` AND EXISTS (SELECT 1 FROM social_post_accounts spa JOIN social_accounts sa ON spa.social_account_id = sa.id WHERE spa.social_post_id = sp.id AND sa.account_type = 'instagram_business')`;
-      } else if (platform === 'facebook') {
-        socialSql += ` AND EXISTS (SELECT 1 FROM social_post_accounts spa JOIN social_accounts sa ON spa.social_account_id = sa.id WHERE spa.social_post_id = sp.id AND sa.account_type = 'facebook_page')`;
-      }
-    }
-    if (status) {
-      socialSql += ` AND sp.status = $${sIdx++}`;
-      socialParams.push(status);
-    }
-
-    socialSql += ' ORDER BY sp.scheduled_at ASC';
-
+    // Social posts query – use Supabase query builder with embedded accounts
     let socialPosts: unknown[] = [];
     try {
-      const socialResult = await query(socialSql, socialParams);
-      socialPosts = socialResult.rows.map((row: Record<string, unknown>) => ({ ...row, item_type: 'social_post' }));
+      let socialQuery = supabase
+        .from('social_posts')
+        .select('*, social_post_accounts(social_accounts(account_type))')
+        .not('scheduled_at', 'is', null)
+        .order('scheduled_at', { ascending: true });
+
+      if (start) {
+        socialQuery = socialQuery.gte('scheduled_at', String(start));
+      }
+      if (end) {
+        socialQuery = socialQuery.lte('scheduled_at', String(end));
+      }
+      if (status) {
+        socialQuery = socialQuery.eq('status', String(status));
+      }
+
+      const { data: socialData, error: socialError } = await socialQuery;
+      if (socialError) throw socialError;
+
+      // Transform social posts into calendar item shape and apply platform filter
+      socialPosts = (socialData || [])
+        .map((sp: Record<string, unknown>) => {
+          const accountsArr = (sp.social_post_accounts || []) as Array<Record<string, unknown>>;
+          const accountTypes = accountsArr
+            .map((spa) => ((spa.social_accounts || {}) as Record<string, unknown>).account_type as string)
+            .filter(Boolean);
+
+          const detectedPlatform = accountTypes.includes('instagram_business')
+            ? 'instagram'
+            : accountTypes.includes('facebook_page')
+            ? 'facebook'
+            : 'facebook';
+
+          return {
+            id: sp.id, brand: sp.caption, product_url: '', campaign_goal: sp.post_type,
+            direction: '', pivot_notes: '', platform: detectedPlatform,
+            status: sp.status, due_date: null, publish_date: sp.scheduled_at,
+            assignee: sp.user_id, created_by: sp.user_id, created_at: sp.created_at, updated_at: sp.updated_at,
+            product_title: '', product_image_url: '', product_id: null, final_copy: sp.caption,
+            item_type: 'social_post', post_type: sp.post_type, hashtags: sp.hashtags,
+          };
+        })
+        .filter((item: Record<string, unknown>) => {
+          if (!platform) return true;
+          return item.platform === String(platform);
+        });
     } catch {
       // social tables may not exist yet
     }
