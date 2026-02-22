@@ -82,7 +82,7 @@ export function ApprovalsPage() {
                     <h3 className="text-sm font-semibold text-[hsl(var(--th-text))]">{item.brand}</h3>
                     {item.platform && <Badge variant="secondary" className="text-[10px]">{item.platform}</Badge>}
                   </div>
-                  {item.campaign_goal && <p className="text-xs text-[hsl(var(--th-text-secondary))] mb-2">{item.campaign_goal}</p>}
+                  {item.campaign_goal && <p className="text-xs text-[hsl(var(--th-text-secondary))] mb-2">{typeof item.campaign_goal === "string" ? item.campaign_goal : item.campaign_goal.title}</p>}
                   <div className="flex items-center gap-4 text-[11px] text-[hsl(var(--th-text-muted))]">
                     {item.assignee && (
                       <span className="flex items-center gap-1"><User className="h-3 w-3" />{item.assignee}</span>

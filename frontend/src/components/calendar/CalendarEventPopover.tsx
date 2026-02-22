@@ -68,7 +68,7 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule }
             {/* Details */}
             <div className="px-4 pb-3 space-y-1.5">
                 {item.campaign_goal && (
-                    <p className="text-xs text-[hsl(var(--th-text-secondary))] line-clamp-2">{item.campaign_goal}</p>
+                    <p className="text-xs text-[hsl(var(--th-text-secondary))] line-clamp-2">{typeof item.campaign_goal === "string" ? item.campaign_goal : item.campaign_goal.title}</p>
                 )}
                 {item.assignee && (
                     <div className="flex items-center gap-2 text-xs text-[hsl(var(--th-text-muted))]">

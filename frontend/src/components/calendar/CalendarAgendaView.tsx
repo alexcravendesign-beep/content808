@@ -115,7 +115,7 @@ export function CalendarAgendaView({ items, onItemClick }: CalendarAgendaViewPro
                                                     <span>{item.brand}</span>
                                                 )}
                                                 {item.campaign_goal && (
-                                                    <span className="truncate">{item.campaign_goal}</span>
+                                                    <span className="truncate">{typeof item.campaign_goal === "string" ? item.campaign_goal : item.campaign_goal.title}</span>
                                                 )}
                                             </div>
                                         </div>
