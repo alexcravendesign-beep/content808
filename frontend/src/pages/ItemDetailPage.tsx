@@ -132,7 +132,7 @@ export function ItemDetailPage() {
               </span>
               {item.platform && <Badge variant="secondary">{item.platform}</Badge>}
             </div>
-            {item.campaign_goal && <p className="text-sm text-[hsl(var(--th-text-secondary))] mb-3">{item.campaign_goal}</p>}
+            {item.campaign_goal && <CampaignGoalDisplay value={item.campaign_goal} />}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {item.status === "idea" && (
@@ -156,10 +156,17 @@ export function ItemDetailPage() {
           <InfoField icon={Clock} label="Updated" value={format(new Date(item.updated_at), "MMM d, h:mm a")} />
         </div>
 
-        {item.direction && (
+        {item.direction && <DirectionDisplay value={item.direction} />}
+        {item.target_audience && Array.isArray(item.target_audience) && item.target_audience.length > 0 && (
           <div className="mb-3">
-            <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Direction</label>
-            <p className="text-sm text-[hsl(var(--th-text-secondary))]">{item.direction}</p>
+            <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Target Audience</label>
+            <div className="flex flex-wrap gap-1.5">
+              {item.target_audience.map((a: string, i: number) => (
+                <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-400 font-medium">
+                  {a}
+                </span>
+              ))}
+            </div>
           </div>
         )}
         {item.pivot_notes && (
@@ -351,6 +358,95 @@ function InfoField({ icon: Icon, label, value }: { icon: React.ElementType; labe
         <Icon className="h-3 w-3" />{label}
       </div>
       <div className="text-sm text-[hsl(var(--th-text-secondary))]">{value}</div>
+    </div>
+  );
+}
+
+/** Display campaign_goal — handles both old string and new JSON formats */
+function CampaignGoalDisplay({ value }: { value: string | Record<string, unknown> | null }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!value) return null;
+
+  // Old format: plain text string
+  if (typeof value === "string") {
+    return <p className="text-sm text-[hsl(var(--th-text-secondary))] mb-3">{value}</p>;
+  }
+
+  // New format: { title, content } object
+  const title = typeof value.title === "string" ? value.title : "";
+  const content = typeof value.content === "string" ? value.content : "";
+
+  if (!title && !content) return null;
+
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="text-sm text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] transition-colors flex items-center gap-1"
+      >
+        <ChevronRight className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-90" : ""}`} />
+        <span className="font-medium">{title}</span>
+      </button>
+      {expanded && content && (
+        <p className="text-sm text-[hsl(var(--th-text-muted))] mt-1 ml-5">{content}</p>
+      )}
+    </div>
+  );
+}
+
+/** Display direction — handles both old string and new JSON formats */
+function DirectionDisplay({ value }: { value: string | Record<string, unknown> | null }) {
+  if (!value) return null;
+
+  // Old format: plain text string
+  if (typeof value === "string") {
+    return (
+      <div className="mb-3">
+        <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Direction</label>
+        <p className="text-sm text-[hsl(var(--th-text-secondary))]">{value}</p>
+      </div>
+    );
+  }
+
+  // New format: { benefits: string[], pain_points: string[] }
+  const benefits = Array.isArray(value.benefits) ? (value.benefits as string[]) : [];
+  const painPoints = Array.isArray(value.pain_points) ? (value.pain_points as string[]) : [];
+
+  if (benefits.length === 0 && painPoints.length === 0) return null;
+
+  return (
+    <div className="mb-3">
+      <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Direction</label>
+      <div className="space-y-2">
+        {benefits.length > 0 && (
+          <div>
+            <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Benefits</span>
+            <ul className="mt-1 space-y-0.5">
+              {benefits.map((b, i) => (
+                <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {painPoints.length > 0 && (
+          <div>
+            <span className="text-xs font-medium text-amber-400 uppercase tracking-wider">Pain Points</span>
+            <ul className="mt-1 space-y-0.5">
+              {painPoints.map((p, i) => (
+                <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                  {p}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

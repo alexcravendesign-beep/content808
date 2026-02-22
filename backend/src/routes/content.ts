@@ -45,8 +45,9 @@ router.get('/items', async (req: Request, res: Response) => {
     }
     if (search) {
       const pattern = `%${search}%`;
-      countQuery = countQuery.or(`brand.ilike.${pattern},campaign_goal.ilike.${pattern},direction.ilike.${pattern}`);
-      dataQuery = dataQuery.or(`brand.ilike.${pattern},campaign_goal.ilike.${pattern},direction.ilike.${pattern}`);
+      // campaign_goal and direction are now JSONB — cast to text for search
+      countQuery = countQuery.or(`brand.ilike.${pattern},campaign_goal::text.ilike.${pattern},direction::text.ilike.${pattern}`);
+      dataQuery = dataQuery.or(`brand.ilike.${pattern},campaign_goal::text.ilike.${pattern},direction::text.ilike.${pattern}`);
     }
 
     const { count, error: countError } = await countQuery;
@@ -100,8 +101,9 @@ router.post(
     body('product_url').optional().trim(),
     body('product_title').optional().trim(),
     body('product_image_url').optional().trim(),
-    body('campaign_goal').optional().trim(),
-    body('direction').optional().trim(),
+    body('campaign_goal').optional(),
+    body('direction').optional(),
+    body('target_audience').optional(),
     body('pivot_notes').optional().trim(),
     body('due_date').optional({ nullable: true }).isISO8601(),
     body('publish_date').optional({ nullable: true }).isISO8601(),
@@ -113,7 +115,8 @@ router.post(
       const id = uuidv4();
       const {
         brand, product_url = '', product_title = '', product_image_url = '',
-        campaign_goal = '', direction = '',
+        product_id = null, campaign_goal = null, direction = null,
+        target_audience = null,
         pivot_notes = '', platform = '', due_date = null,
         publish_date = null, assignee = null
       } = req.body;
@@ -124,8 +127,10 @@ router.post(
         product_url,
         product_title,
         product_image_url,
+        product_id,
         campaign_goal,
         direction,
+        target_audience,
         pivot_notes,
         platform,
         status: 'idea',
@@ -163,8 +168,9 @@ router.put(
     body('product_url').optional().trim(),
     body('product_title').optional().trim(),
     body('product_image_url').optional().trim(),
-    body('campaign_goal').optional().trim(),
-    body('direction').optional().trim(),
+    body('campaign_goal').optional(),
+    body('direction').optional(),
+    body('target_audience').optional(),
     body('pivot_notes').optional().trim(),
     body('due_date').optional({ nullable: true }),
     body('publish_date').optional({ nullable: true }),
@@ -183,7 +189,7 @@ router.put(
         return res.status(404).json({ error: 'Item not found' });
       }
 
-      const fields = ['brand', 'product_url', 'product_title', 'product_image_url', 'campaign_goal', 'direction', 'pivot_notes', 'platform', 'due_date', 'publish_date', 'assignee'];
+      const fields = ['brand', 'product_url', 'product_title', 'product_image_url', 'product_id', 'campaign_goal', 'direction', 'target_audience', 'pivot_notes', 'platform', 'due_date', 'publish_date', 'assignee'];
       const updateObj: Record<string, unknown> = {};
 
       for (const field of fields) {

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ContentItem } from "@/api/client";
+import { campaignGoalLabel } from "@/lib/formatHelpers";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
 import { User, ExternalLink, ArrowRight, Clock } from "lucide-react";
@@ -68,7 +69,7 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule }
             {/* Details */}
             <div className="px-4 pb-3 space-y-1.5">
                 {item.campaign_goal && (
-                    <p className="text-xs text-[hsl(var(--th-text-secondary))] line-clamp-2">{item.campaign_goal}</p>
+                    <p className="text-xs text-[hsl(var(--th-text-secondary))] line-clamp-2">{campaignGoalLabel(item.campaign_goal)}</p>
                 )}
                 {item.assignee && (
                     <div className="flex items-center gap-2 text-xs text-[hsl(var(--th-text-muted))]">

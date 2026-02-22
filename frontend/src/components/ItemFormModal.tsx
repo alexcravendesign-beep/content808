@@ -4,12 +4,23 @@ import { api, ContentItem } from "@/api/client";
 import { Product } from "@/api/productApi";
 import { ProductPicker, SelectedProduct } from "@/components/ProductPicker";
 import { useToast } from "@/components/ui/toast";
+import { X, ChevronDown } from "lucide-react";
 
 interface ItemFormModalProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   item?: ContentItem | null;
+}
+
+interface CampaignGoalValue {
+  title: string;
+  content: string;
+}
+
+interface DirectionValue {
+  benefits: string[];
+  pain_points: string[];
 }
 
 const PLATFORMS = ["instagram", "tiktok", "youtube", "twitter", "facebook", "linkedin", "email", "blog"];
@@ -23,8 +34,9 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
     product_title: "",
     product_image_url: "",
     product_id: null as string | null,
-    campaign_goal: "",
-    direction: "",
+    campaign_goal: null as CampaignGoalValue | null,
+    direction: null as DirectionValue | null,
+    target_audience: [] as string[],
     pivot_notes: "",
     platform: "",
     due_date: "",
@@ -32,16 +44,52 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
     assignee: "",
   });
 
+  /** Full product data for populating marketing fields */
+  const [selectedProductData, setSelectedProductData] = useState<Product | null>(null);
+
   useEffect(() => {
     if (item) {
+      // Parse campaign_goal: handle both old string and new JSON formats
+      let campaignGoal: CampaignGoalValue | null = null;
+      if (item.campaign_goal) {
+        if (typeof item.campaign_goal === "string") {
+          // Old format: plain text string - leave as null (user can re-select)
+          campaignGoal = null;
+        } else if (typeof item.campaign_goal === "object" && item.campaign_goal !== null) {
+          const cg = item.campaign_goal as Record<string, unknown>;
+          if (cg.title && cg.content) {
+            campaignGoal = { title: String(cg.title), content: String(cg.content) };
+          }
+        }
+      }
+
+      // Parse direction: handle both old string and new JSON formats
+      let direction: DirectionValue | null = null;
+      if (item.direction) {
+        if (typeof item.direction === "string") {
+          // Old format: plain text string - leave as null
+          direction = null;
+        } else if (typeof item.direction === "object" && item.direction !== null) {
+          const dir = item.direction as Record<string, unknown>;
+          direction = {
+            benefits: Array.isArray(dir.benefits) ? (dir.benefits as string[]) : [],
+            pain_points: Array.isArray(dir.pain_points) ? (dir.pain_points as string[]) : [],
+          };
+        }
+      }
+
+      // Parse target_audience
+      const targetAudience = Array.isArray(item.target_audience) ? item.target_audience : [];
+
       setForm({
         brand: item.brand || "",
         product_url: item.product_url || "",
         product_title: item.product_title || "",
         product_image_url: item.product_image_url || "",
         product_id: item.product_id || null,
-        campaign_goal: item.campaign_goal || "",
-        direction: item.direction || "",
+        campaign_goal: campaignGoal,
+        direction: direction,
+        target_audience: targetAudience,
         pivot_notes: item.pivot_notes || "",
         platform: item.platform || "",
         due_date: item.due_date ? item.due_date.slice(0, 16) : "",
@@ -51,17 +99,19 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
     } else {
       setForm({
         brand: "", product_url: "", product_title: "", product_image_url: "",
-        product_id: null, campaign_goal: "", direction: "", pivot_notes: "",
-        platform: "", due_date: "", publish_date: "", assignee: "",
+        product_id: null, campaign_goal: null, direction: null, target_audience: [],
+        pivot_notes: "", platform: "", due_date: "", publish_date: "", assignee: "",
       });
+      setSelectedProductData(null);
     }
   }, [item, open]);
 
-  const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value }));
+  const set = (key: string, value: unknown) => setForm((prev) => ({ ...prev, [key]: value }));
 
   /** When a product is selected from the picker */
   const handleProductSelect = (product: Product | null) => {
     if (product) {
+      setSelectedProductData(product);
       setForm((prev) => ({
         ...prev,
         product_id: product.id,
@@ -69,14 +119,22 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
         product_image_url: product.thumbnail || "",
         product_url: product.source_url || "",
         brand: product.brand || prev.brand,
+        // Reset marketing fields when product changes
+        campaign_goal: null,
+        direction: { benefits: [], pain_points: [] },
+        target_audience: [],
       }));
     } else {
+      setSelectedProductData(null);
       setForm((prev) => ({
         ...prev,
         product_id: null,
         product_title: "",
         product_image_url: "",
         product_url: "",
+        campaign_goal: null,
+        direction: null,
+        target_audience: [],
       }));
     }
   };
@@ -92,6 +150,14 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
     }
     : null;
 
+  /** Get marketing angles from the selected product */
+  const marketingAngles: CampaignGoalValue[] = (selectedProductData?.marketing_angles || []).map((a) => {
+    if (typeof a === "string") {
+      return { title: a, content: a };
+    }
+    return { title: a.title, content: a.content };
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.brand.trim()) {
@@ -100,17 +166,18 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
     }
     setLoading(true);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...form,
         due_date: form.due_date || null,
         publish_date: form.publish_date || null,
         assignee: form.assignee || null,
+        target_audience: form.target_audience.length > 0 ? form.target_audience : null,
       };
       if (item) {
-        await api.updateItem(item.id, payload);
+        await api.updateItem(item.id, payload as Partial<ContentItem>);
         toast("Item updated", "success");
       } else {
-        await api.createItem(payload);
+        await api.createItem(payload as Partial<ContentItem>);
         toast("Item created", "success");
       }
       onSaved();
@@ -122,6 +189,61 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
     }
   };
 
+  /** Handle campaign goal selection */
+  const handleCampaignGoalChange = (index: string) => {
+    if (index === "") {
+      set("campaign_goal", null);
+      return;
+    }
+    const idx = parseInt(index, 10);
+    const angle = marketingAngles[idx];
+    if (angle) {
+      set("campaign_goal", { title: angle.title, content: angle.content });
+    }
+  };
+
+  /** Handle direction checkbox toggle */
+  const toggleDirectionItem = (type: "benefits" | "pain_points", value: string) => {
+    setForm((prev) => {
+      const current = prev.direction || { benefits: [], pain_points: [] };
+      const list = current[type];
+      const updated = list.includes(value)
+        ? list.filter((v) => v !== value)
+        : [...list, value];
+      return {
+        ...prev,
+        direction: { ...current, [type]: updated },
+      };
+    });
+  };
+
+  /** Handle target audience tag toggle */
+  const toggleTargetAudience = (value: string) => {
+    setForm((prev) => {
+      const list = prev.target_audience;
+      const updated = list.includes(value)
+        ? list.filter((v) => v !== value)
+        : [...list, value];
+      return { ...prev, target_audience: updated };
+    });
+  };
+
+  const removeTargetAudience = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      target_audience: prev.target_audience.filter((v) => v !== value),
+    }));
+  };
+
+  /** Find the index of the currently selected campaign goal */
+  const selectedCampaignGoalIndex = form.campaign_goal
+    ? marketingAngles.findIndex(
+        (a) => a.title === form.campaign_goal?.title && a.content === form.campaign_goal?.content
+      )
+    : -1;
+
+  const hasProductData = !!selectedProductData;
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
@@ -129,7 +251,7 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
         <DialogHeader>
           <DialogTitle>{item ? "Edit Item" : "Create New Item"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           {/* Product Picker — replaces manual product fields */}
           <ProductPicker selected={selectedProduct} onSelect={handleProductSelect} />
 
@@ -141,8 +263,135 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
             placeholder="Brand name"
           />
 
-          <Field label="Campaign Goal" value={form.campaign_goal} onChange={(v) => set("campaign_goal", v)} placeholder="What's the goal?" multiline />
-          <Field label="Direction" value={form.direction} onChange={(v) => set("direction", v)} placeholder="Creative direction" multiline />
+          {/* Campaign Goal — dropdown of marketing angles when product selected */}
+          {hasProductData && marketingAngles.length > 0 ? (
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--th-text-secondary))] mb-1.5">Campaign Goal</label>
+              <div className="relative">
+                <select
+                  value={selectedCampaignGoalIndex >= 0 ? String(selectedCampaignGoalIndex) : ""}
+                  onChange={(e) => handleCampaignGoalChange(e.target.value)}
+                  className="w-full h-9 px-3 pr-8 rounded-md bg-[hsl(var(--th-input))] border border-[hsl(var(--th-border))] text-sm text-[hsl(var(--th-text))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--th-border))] appearance-none"
+                >
+                  <option value="">Select a marketing angle...</option>
+                  {marketingAngles.map((angle, i) => (
+                    <option key={i} value={String(i)}>{angle.title}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[hsl(var(--th-text-muted))] pointer-events-none" />
+              </div>
+              {form.campaign_goal && (
+                <p className="mt-1.5 text-xs text-[hsl(var(--th-text-muted))] bg-[hsl(var(--th-input)/0.5)] rounded-md p-2">
+                  {form.campaign_goal.content}
+                </p>
+              )}
+            </div>
+          ) : !hasProductData ? (
+            <Field label="Campaign Goal" value="" onChange={() => {}} placeholder="Select a product to choose marketing angles" multiline />
+          ) : null}
+
+          {/* Direction — benefits + pain points checkboxes when product selected */}
+          {hasProductData && ((selectedProductData?.benefits || []).length > 0 || (selectedProductData?.pain_points || []).length > 0) ? (
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--th-text-secondary))] mb-2">Direction</label>
+              <div className="space-y-3 bg-[hsl(var(--th-input)/0.3)] rounded-lg p-3 border border-[hsl(var(--th-border)/0.3)]">
+                {/* Benefits */}
+                {(selectedProductData?.benefits || []).length > 0 && (
+                  <div>
+                    <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider mb-1.5 block">Benefits</span>
+                    <div className="space-y-1">
+                      {(selectedProductData?.benefits || []).map((benefit, i) => {
+                        const checked = form.direction?.benefits.includes(benefit) || false;
+                        return (
+                          <label key={i} className="flex items-start gap-2 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleDirectionItem("benefits", benefit)}
+                              className="mt-0.5 h-3.5 w-3.5 rounded border-[hsl(var(--th-border))] bg-[hsl(var(--th-input))] text-emerald-500 focus:ring-emerald-500/30 cursor-pointer"
+                            />
+                            <span className={`text-sm ${checked ? "text-[hsl(var(--th-text))]" : "text-[hsl(var(--th-text-secondary))]"} group-hover:text-[hsl(var(--th-text))]`}>
+                              {benefit}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pain Points */}
+                {(selectedProductData?.pain_points || []).length > 0 && (
+                  <div>
+                    <span className="text-xs font-medium text-amber-400 uppercase tracking-wider mb-1.5 block">Pain Points</span>
+                    <div className="space-y-1">
+                      {(selectedProductData?.pain_points || []).map((point, i) => {
+                        const checked = form.direction?.pain_points.includes(point) || false;
+                        return (
+                          <label key={i} className="flex items-start gap-2 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleDirectionItem("pain_points", point)}
+                              className="mt-0.5 h-3.5 w-3.5 rounded border-[hsl(var(--th-border))] bg-[hsl(var(--th-input))] text-amber-500 focus:ring-amber-500/30 cursor-pointer"
+                            />
+                            <span className={`text-sm ${checked ? "text-[hsl(var(--th-text))]" : "text-[hsl(var(--th-text-secondary))]"} group-hover:text-[hsl(var(--th-text))]`}>
+                              {point}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : !hasProductData ? (
+            <Field label="Direction" value="" onChange={() => {}} placeholder="Select a product to choose benefits & pain points" multiline />
+          ) : null}
+
+          {/* Target Audience — multi-select tags when product selected */}
+          {hasProductData && (selectedProductData?.target_audience || []).length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--th-text-secondary))] mb-1.5">Target Audience</label>
+              {/* Selected tags */}
+              {form.target_audience.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {form.target_audience.map((audience) => (
+                    <span
+                      key={audience}
+                      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-400 font-medium"
+                    >
+                      {audience}
+                      <button
+                        type="button"
+                        onClick={() => removeTargetAudience(audience)}
+                        className="hover:text-cyan-200 transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Available options */}
+              <div className="flex flex-wrap gap-1.5">
+                {(selectedProductData?.target_audience || [])
+                  .filter((a) => !form.target_audience.includes(a))
+                  .map((audience) => (
+                    <button
+                      key={audience}
+                      type="button"
+                      onClick={() => toggleTargetAudience(audience)}
+                      className="text-xs px-2 py-1 rounded-full border border-[hsl(var(--th-border))] text-[hsl(var(--th-text-muted))] hover:bg-cyan-500/10 hover:text-cyan-400 hover:border-cyan-500/30 transition-colors"
+                    >
+                      + {audience}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+
           <Field label="Pivot Notes" value={form.pivot_notes} onChange={(v) => set("pivot_notes", v)} placeholder="Any pivot notes" multiline />
 
           <div>

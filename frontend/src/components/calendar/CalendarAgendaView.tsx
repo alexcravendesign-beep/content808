@@ -1,4 +1,5 @@
 import { ContentItem } from "@/api/client";
+import { campaignGoalLabel } from "@/lib/formatHelpers";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
 import { format, parseISO, isSameDay, isToday as isDateToday, isTomorrow, addDays } from "date-fns";
@@ -115,7 +116,7 @@ export function CalendarAgendaView({ items, onItemClick }: CalendarAgendaViewPro
                                                     <span>{item.brand}</span>
                                                 )}
                                                 {item.campaign_goal && (
-                                                    <span className="truncate">{item.campaign_goal}</span>
+                                                    <span className="truncate">{campaignGoalLabel(item.campaign_goal)}</span>
                                                 )}
                                             </div>
                                         </div>

@@ -1,4 +1,5 @@
 import { ContentItem } from "@/api/client";
+import { campaignGoalLabel } from "@/lib/formatHelpers";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, User, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
@@ -29,7 +30,7 @@ export function ItemCard({ item, onClick, compact }: ItemCardProps) {
       </div>
 
       {!compact && item.campaign_goal && (
-        <p className="text-xs text-[hsl(var(--th-text-secondary))] mb-2 line-clamp-2 group-hover:text-[hsl(var(--th-text))] transition-colors">{item.campaign_goal}</p>
+        <p className="text-xs text-[hsl(var(--th-text-secondary))] mb-2 line-clamp-2 group-hover:text-[hsl(var(--th-text))] transition-colors">{campaignGoalLabel(item.campaign_goal)}</p>
       )}
 
       <div className="flex items-center gap-3 text-[11px] text-[hsl(var(--th-text-muted))]">

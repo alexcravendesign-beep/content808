@@ -4,6 +4,7 @@ import * as migration001 from './migrations/001_initial_schema';
 import * as migration002 from './migrations/002_add_product_fields';
 import * as migration003 from './migrations/003_add_output_created_by_and_final_copy';
 import * as migration004 from './migrations/004_social_media_tables';
+import * as migration005 from './migrations/005_marketing_data_fields';
 
 /**
  * Migrations require raw SQL (DDL) which the Supabase query builder cannot
@@ -34,6 +35,7 @@ const migrations: Migration[] = [
   { id: migration002.id, up: migration002.up, down: migration002.down },
   { id: migration003.id, up: migration003.up, down: migration003.down },
   { id: migration004.id, up: migration004.up, down: migration004.down },
+  { id: migration005.id, up: migration005.up, down: migration005.down },
 ];
 
 async function ensureMigrationsTable() {
