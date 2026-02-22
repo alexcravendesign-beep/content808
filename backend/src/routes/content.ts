@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { body, param, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
 import { logAudit, getAuditLog } from '../services/audit';
@@ -21,43 +21,49 @@ function handleValidation(req: Request, res: Response): boolean {
 router.get('/items', async (req: Request, res: Response) => {
   try {
     const { status, platform, assignee, brand, search, limit, offset } = req.query;
-    let where = 'WHERE 1=1';
-    const params: unknown[] = [];
-    let idx = 1;
+
+    // Build a count query
+    let countQuery = supabase.from('content_items').select('*', { count: 'exact', head: true });
+    // Build a data query
+    let dataQuery = supabase.from('content_items').select('*');
 
     if (status) {
-      where += ` AND status = $${idx++}`;
-      params.push(status);
+      countQuery = countQuery.eq('status', String(status));
+      dataQuery = dataQuery.eq('status', String(status));
     }
     if (platform) {
-      where += ` AND platform = $${idx++}`;
-      params.push(platform);
+      countQuery = countQuery.eq('platform', String(platform));
+      dataQuery = dataQuery.eq('platform', String(platform));
     }
     if (assignee) {
-      where += ` AND assignee = $${idx++}`;
-      params.push(assignee);
+      countQuery = countQuery.eq('assignee', String(assignee));
+      dataQuery = dataQuery.eq('assignee', String(assignee));
     }
     if (brand) {
-      where += ` AND brand ILIKE $${idx++}`;
-      params.push(`%${brand}%`);
+      countQuery = countQuery.ilike('brand', `%${brand}%`);
+      dataQuery = dataQuery.ilike('brand', `%${brand}%`);
     }
     if (search) {
-      where += ` AND (brand ILIKE $${idx} OR campaign_goal ILIKE $${idx} OR direction ILIKE $${idx})`;
-      params.push(`%${search}%`);
-      idx++;
+      const pattern = `%${search}%`;
+      countQuery = countQuery.or(`brand.ilike.${pattern},campaign_goal.ilike.${pattern},direction.ilike.${pattern}`);
+      dataQuery = dataQuery.or(`brand.ilike.${pattern},campaign_goal.ilike.${pattern},direction.ilike.${pattern}`);
     }
 
-    // Count total matching rows
-    const countResult = await query(`SELECT COUNT(*)::int as count FROM content_items ${where}`, params);
-    const total = countResult.rows[0].count;
+    const { count, error: countError } = await countQuery;
+    if (countError) throw new Error(countError.message);
+    const total = count || 0;
 
-    // Paginate
     const pageLimit = Math.min(parseInt(limit as string) || 200, 500);
     const pageOffset = parseInt(offset as string) || 0;
 
-    const sql = `SELECT * FROM content_items ${where} ORDER BY updated_at DESC LIMIT $${idx++} OFFSET $${idx++}`;
-    const result = await query(sql, [...params, pageLimit, pageOffset]);
-    res.json({ items: result.rows, total, limit: pageLimit, offset: pageOffset });
+    dataQuery = dataQuery
+      .order('updated_at', { ascending: false })
+      .range(pageOffset, pageOffset + pageLimit - 1);
+
+    const { data, error } = await dataQuery;
+    if (error) throw new Error(error.message);
+
+    res.json({ items: data || [], total, limit: pageLimit, offset: pageOffset });
   } catch (err) {
     console.error('Error fetching items:', err);
     res.status(500).json({ error: 'Failed to fetch items' });
@@ -67,15 +73,19 @@ router.get('/items', async (req: Request, res: Response) => {
 router.get('/items/:id', [param('id').isUUID()], async (req: Request, res: Response) => {
   if (!handleValidation(req, res)) return;
   try {
-    const result = await query('SELECT * FROM content_items WHERE id = $1', [req.params.id]);
-    if (result.rows.length === 0) {
+    const { data, error } = await supabase
+      .from('content_items')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) {
       return res.status(404).json({ error: 'Item not found' });
     }
-    const item = result.rows[0];
     const validTransitions = req.user
-      ? getValidTransitions(item.status, req.user.role)
+      ? getValidTransitions(data.status, req.user.role)
       : [];
-    res.json({ ...item, valid_transitions: validTransitions });
+    res.json({ ...data, valid_transitions: validTransitions });
   } catch (err) {
     console.error('Error fetching item:', err);
     res.status(500).json({ error: 'Failed to fetch item' });
@@ -108,11 +118,23 @@ router.post(
         publish_date = null, assignee = null
       } = req.body;
 
-      await query(
-        `INSERT INTO content_items (id, brand, product_url, product_title, product_image_url, campaign_goal, direction, pivot_notes, platform, status, due_date, publish_date, assignee, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'idea',$10,$11,$12,$13)`,
-        [id, brand, product_url, product_title, product_image_url, campaign_goal, direction, pivot_notes, platform, due_date, publish_date, assignee, req.user!.id]
-      );
+      const { error: insertError } = await supabase.from('content_items').insert({
+        id,
+        brand,
+        product_url,
+        product_title,
+        product_image_url,
+        campaign_goal,
+        direction,
+        pivot_notes,
+        platform,
+        status: 'idea',
+        due_date,
+        publish_date,
+        assignee,
+        created_by: req.user!.id,
+      });
+      if (insertError) throw new Error(insertError.message);
 
       await logAudit({
         entityType: 'content_item',
@@ -123,8 +145,8 @@ router.post(
         details: { brand, platform, status: 'idea' },
       });
 
-      const result = await query('SELECT * FROM content_items WHERE id = $1', [id]);
-      res.status(201).json(result.rows[0]);
+      const { data } = await supabase.from('content_items').select('*').eq('id', id).single();
+      res.status(201).json(data);
     } catch (err) {
       console.error('Error creating item:', err);
       res.status(500).json({ error: 'Failed to create item' });
@@ -151,34 +173,34 @@ router.put(
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
     try {
-      const existing = await query('SELECT * FROM content_items WHERE id = $1', [req.params.id]);
-      if (existing.rows.length === 0) {
+      const { data: existing, error: fetchError } = await supabase
+        .from('content_items')
+        .select('*')
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (fetchError) throw new Error(fetchError.message);
+      if (!existing) {
         return res.status(404).json({ error: 'Item not found' });
       }
 
       const fields = ['brand', 'product_url', 'product_title', 'product_image_url', 'campaign_goal', 'direction', 'pivot_notes', 'platform', 'due_date', 'publish_date', 'assignee'];
-      const updates: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
+      const updateObj: Record<string, unknown> = {};
 
       for (const field of fields) {
         if (req.body[field] !== undefined) {
-          updates.push(`${field} = $${idx++}`);
-          values.push(req.body[field]);
+          updateObj[field] = req.body[field];
         }
       }
 
-      if (updates.length === 0) {
+      if (Object.keys(updateObj).length === 0) {
         return res.status(400).json({ error: 'No fields to update' });
       }
 
-      updates.push(`updated_at = NOW()`);
-      values.push(req.params.id);
-
-      await query(
-        `UPDATE content_items SET ${updates.join(', ')} WHERE id = $${idx}`,
-        values
-      );
+      const { error: updateError } = await supabase
+        .from('content_items')
+        .update(updateObj)
+        .eq('id', req.params.id);
+      if (updateError) throw new Error(updateError.message);
 
       await logAudit({
         entityType: 'content_item',
@@ -189,8 +211,8 @@ router.put(
         details: { updated_fields: Object.keys(req.body).filter(k => fields.includes(k)) },
       });
 
-      const result = await query('SELECT * FROM content_items WHERE id = $1', [req.params.id]);
-      res.json(result.rows[0]);
+      const { data } = await supabase.from('content_items').select('*').eq('id', req.params.id).single();
+      res.json(data);
     } catch (err) {
       console.error('Error updating item:', err);
       res.status(500).json({ error: 'Failed to update item' });
@@ -201,18 +223,26 @@ router.put(
 router.delete('/items/:id', [param('id').isUUID()], requireRole('admin'), async (req: Request, res: Response) => {
   if (!handleValidation(req, res)) return;
   try {
-    const existing = await query('SELECT * FROM content_items WHERE id = $1', [req.params.id]);
-    if (existing.rows.length === 0) {
+    const { data: existing, error: fetchError } = await supabase
+      .from('content_items')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
+    if (!existing) {
       return res.status(404).json({ error: 'Item not found' });
     }
-    await query('DELETE FROM content_items WHERE id = $1', [req.params.id]);
+
+    const { error: deleteError } = await supabase.from('content_items').delete().eq('id', req.params.id);
+    if (deleteError) throw new Error(deleteError.message);
+
     await logAudit({
       entityType: 'content_item',
       entityId: req.params.id,
       action: 'delete',
       actor: req.user!.id,
       actorRole: req.user!.role,
-      details: { brand: existing.rows[0].brand },
+      details: { brand: existing.brand },
     });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -231,13 +261,17 @@ router.post(
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
     try {
-      const existing = await query('SELECT * FROM content_items WHERE id = $1', [req.params.id]);
-      if (existing.rows.length === 0) {
+      const { data: existing, error: fetchError } = await supabase
+        .from('content_items')
+        .select('*')
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (fetchError) throw new Error(fetchError.message);
+      if (!existing) {
         return res.status(404).json({ error: 'Item not found' });
       }
 
-      const item = existing.rows[0];
-      const fromStatus: ContentStatus = item.status;
+      const fromStatus: ContentStatus = existing.status;
       const toStatus: ContentStatus = req.body.to;
 
       if (!canTransition(fromStatus, toStatus, req.user!.role)) {
@@ -248,10 +282,11 @@ router.post(
         });
       }
 
-      await query(
-        'UPDATE content_items SET status = $1, updated_at = NOW() WHERE id = $2',
-        [toStatus, req.params.id]
-      );
+      const { error: updateError } = await supabase
+        .from('content_items')
+        .update({ status: toStatus })
+        .eq('id', req.params.id);
+      if (updateError) throw new Error(updateError.message);
 
       await logAudit({
         entityType: 'content_item',
@@ -262,8 +297,8 @@ router.post(
         details: { from: fromStatus, to: toStatus, reason: req.body.reason || '' },
       });
 
-      const result = await query('SELECT * FROM content_items WHERE id = $1', [req.params.id]);
-      res.json(result.rows[0]);
+      const { data } = await supabase.from('content_items').select('*').eq('id', req.params.id).single();
+      res.json(data);
     } catch (err) {
       console.error('Error transitioning item:', err);
       res.status(500).json({ error: 'Failed to transition item' });
@@ -284,27 +319,42 @@ router.get('/items/:id/history', [param('id').isUUID()], async (req: Request, re
 
 router.get('/stats', async (_req: Request, res: Response) => {
   try {
-    const statusCounts = await query(
-      `SELECT status, COUNT(*)::int as count FROM content_items GROUP BY status`
-    );
-    const dueSoon = await query(
-      `SELECT COUNT(*)::int as count FROM content_items WHERE due_date BETWEEN NOW() AND NOW() + INTERVAL '3 days' AND status NOT IN ('published')`
-    );
-    const scheduledToday = await query(
-      `SELECT COUNT(*)::int as count FROM content_items WHERE publish_date::date = CURRENT_DATE AND status = 'scheduled'`
-    );
-    const total = await query(`SELECT COUNT(*)::int as count FROM content_items`);
+    // Fetch all content items status for grouping
+    const { data: items, error: itemsError } = await supabase
+      .from('content_items')
+      .select('status, due_date, publish_date');
+    if (itemsError) throw new Error(itemsError.message);
+
+    const allItems = items || [];
+    const total = allItems.length;
 
     const byStatus: Record<string, number> = {};
-    for (const row of statusCounts.rows) {
-      byStatus[row.status] = row.count;
+    for (const row of allItems) {
+      byStatus[row.status] = (byStatus[row.status] || 0) + 1;
+    }
+
+    const now = new Date();
+    const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const todayStr = now.toISOString().split('T')[0];
+
+    let dueSoon = 0;
+    let scheduledToday = 0;
+    for (const row of allItems) {
+      if (row.due_date && row.status !== 'published') {
+        const d = new Date(row.due_date);
+        if (d >= now && d <= threeDaysLater) dueSoon++;
+      }
+      if (row.publish_date && row.status === 'scheduled') {
+        const pDate = new Date(row.publish_date).toISOString().split('T')[0];
+        if (pDate === todayStr) scheduledToday++;
+      }
     }
 
     res.json({
-      total: total.rows[0].count,
+      total,
       by_status: byStatus,
-      due_soon: dueSoon.rows[0].count,
-      scheduled_today: scheduledToday.rows[0].count,
+      due_soon: dueSoon,
+      scheduled_today: scheduledToday,
     });
   } catch (err) {
     console.error('Error fetching stats:', err);
@@ -319,8 +369,13 @@ router.post(
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
     try {
-      const existing = await query('SELECT id FROM content_items WHERE id = $1', [req.params.id]);
-      if (existing.rows.length === 0) {
+      const { data: existing, error: fetchError } = await supabase
+        .from('content_items')
+        .select('id')
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (fetchError) throw new Error(fetchError.message);
+      if (!existing) {
         return res.status(404).json({ error: 'Item not found' });
       }
 

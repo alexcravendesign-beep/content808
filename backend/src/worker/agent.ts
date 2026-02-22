@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import { redisConnection } from '../db/redis';
-import { query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { logAudit } from '../services/audit';
 import { canTransition } from '../services/transitions';
 import { generateWithModel, cleanAndParseJSON } from '../services/aiService';
@@ -106,11 +106,16 @@ async function processAgentFill(job: Job<AgentFillData>) {
     console.log(`[agent-fill] Processing item ${itemId}`);
 
     // 1. Fetch the content item
-    const itemResult = await query('SELECT * FROM content_items WHERE id = $1', [itemId]);
-    if (itemResult.rows.length === 0) {
+    const { data: itemData, error: itemError } = await supabase
+        .from('content_items')
+        .select('*')
+        .eq('id', itemId)
+        .maybeSingle();
+    if (itemError) throw new Error(itemError.message);
+    if (!itemData) {
         throw new Error(`Content item ${itemId} not found`);
     }
-    const item = itemResult.rows[0] as Record<string, string | null>;
+    const item = itemData as Record<string, string | null>;
 
     // 2. Select prompt template and build variables
     const promptId = selectPromptId(item);
@@ -131,17 +136,14 @@ async function processAgentFill(job: Job<AgentFillData>) {
         console.error(`[agent-fill] AI generation failed for item ${itemId}:`, message);
 
         // Store the error as an output so the user can see what happened
-        await query(
-            `INSERT INTO content_item_outputs (id, content_item_id, output_type, output_data, created_by)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-                uuidv4(),
-                itemId,
-                'error',
-                JSON.stringify({ error: message, prompt_id: promptId, model: modelId }),
-                'agent-worker',
-            ],
-        );
+        const { error: outputErr } = await supabase.from('content_item_outputs').insert({
+            id: uuidv4(),
+            content_item_id: itemId,
+            output_type: 'error',
+            output_data: { error: message, prompt_id: promptId, model: modelId },
+            created_by: 'agent-worker',
+        });
+        if (outputErr) console.error('Error storing error output:', outputErr.message);
         throw err;
     }
 
@@ -178,26 +180,31 @@ async function processAgentFill(job: Job<AgentFillData>) {
 
     // 6. Insert outputs into content_item_outputs
     for (const output of outputs) {
-        await query(
-            `INSERT INTO content_item_outputs (id, content_item_id, output_type, output_data, created_by)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [uuidv4(), itemId, output.type, JSON.stringify(output.data), 'agent-worker'],
-        );
+        const { error: insertErr } = await supabase.from('content_item_outputs').insert({
+            id: uuidv4(),
+            content_item_id: itemId,
+            output_type: output.type,
+            output_data: output.data,
+            created_by: 'agent-worker',
+        });
+        if (insertErr) throw new Error(`Failed to insert output: ${insertErr.message}`);
     }
 
     // 7. Update final_copy on the content item
     const finalCopy = typeof draftCopy === 'string' ? draftCopy : JSON.stringify(draftCopy);
-    await query('UPDATE content_items SET final_copy = $1, updated_at = NOW() WHERE id = $2', [
-        finalCopy,
-        itemId,
-    ]);
+    const { error: updateCopyErr } = await supabase
+        .from('content_items')
+        .update({ final_copy: finalCopy })
+        .eq('id', itemId);
+    if (updateCopyErr) throw new Error(`Failed to update final_copy: ${updateCopyErr.message}`);
 
     // 8. Transition idea → draft using canTransition for safety
     if (item.status === 'idea' && canTransition('idea', 'draft', 'staff')) {
-        await query(
-            "UPDATE content_items SET status = 'draft', updated_at = NOW() WHERE id = $1",
-            [itemId],
-        );
+        const { error: transitionErr } = await supabase
+            .from('content_items')
+            .update({ status: 'draft' })
+            .eq('id', itemId);
+        if (transitionErr) throw new Error(`Failed to transition: ${transitionErr.message}`);
 
         await logAudit({
             entityType: 'content_item',

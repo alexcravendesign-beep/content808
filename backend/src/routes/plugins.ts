@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { body, param, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
 import { requireRole } from '../middleware/auth';
@@ -9,8 +9,12 @@ const router = Router();
 
 router.get('/plugins', async (_req: Request, res: Response) => {
   try {
-    const result = await query('SELECT * FROM plugin_registry ORDER BY name ASC');
-    res.json({ plugins: result.rows });
+    const { data, error } = await supabase
+      .from('plugin_registry')
+      .select('*')
+      .order('name', { ascending: true });
+    if (error) throw new Error(error.message);
+    res.json({ plugins: data || [] });
   } catch (err) {
     console.error('Error fetching plugins:', err);
     res.status(500).json({ error: 'Failed to fetch plugins' });
@@ -23,11 +27,16 @@ router.get('/plugins/:id', [param('id').isUUID()], async (req: Request, res: Res
     return res.status(400).json({ errors: errors.array() });
   }
   try {
-    const result = await query('SELECT * FROM plugin_registry WHERE id = $1', [req.params.id]);
-    if (result.rows.length === 0) {
+    const { data, error } = await supabase
+      .from('plugin_registry')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) {
       return res.status(404).json({ error: 'Plugin not found' });
     }
-    res.json(result.rows[0]);
+    res.json(data);
   } catch (err) {
     console.error('Error fetching plugin:', err);
     res.status(500).json({ error: 'Failed to fetch plugin' });
@@ -53,11 +62,16 @@ router.post(
       const id = uuidv4();
       const { name, description = '', type, config = {}, mount_point = '' } = req.body;
 
-      await query(
-        `INSERT INTO plugin_registry (id, name, description, type, enabled, config, mount_point)
-         VALUES ($1, $2, $3, $4, false, $5, $6)`,
-        [id, name, description, type, JSON.stringify(config), mount_point]
-      );
+      const { error: insertError } = await supabase.from('plugin_registry').insert({
+        id,
+        name,
+        description,
+        type,
+        enabled: false,
+        config,
+        mount_point,
+      });
+      if (insertError) throw new Error(insertError.message);
 
       await logAudit({
         entityType: 'plugin',
@@ -68,8 +82,8 @@ router.post(
         details: { name, type },
       });
 
-      const result = await query('SELECT * FROM plugin_registry WHERE id = $1', [id]);
-      res.status(201).json(result.rows[0]);
+      const { data } = await supabase.from('plugin_registry').select('*').eq('id', id).single();
+      res.status(201).json(data);
     } catch (err) {
       console.error('Error creating plugin:', err);
       res.status(500).json({ error: 'Failed to create plugin' });
@@ -93,39 +107,34 @@ router.put(
       return res.status(400).json({ errors: errors.array() });
     }
     try {
-      const existing = await query('SELECT * FROM plugin_registry WHERE id = $1', [req.params.id]);
-      if (existing.rows.length === 0) {
+      const { data: existing, error: fetchError } = await supabase
+        .from('plugin_registry')
+        .select('*')
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (fetchError) throw new Error(fetchError.message);
+      if (!existing) {
         return res.status(404).json({ error: 'Plugin not found' });
       }
 
       const fields = ['enabled', 'config', 'description', 'mount_point'];
-      const updates: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
+      const updateObj: Record<string, unknown> = {};
 
       for (const field of fields) {
         if (req.body[field] !== undefined) {
-          if (field === 'config') {
-            updates.push(`config = $${idx++}`);
-            values.push(JSON.stringify(req.body.config));
-          } else {
-            updates.push(`${field} = $${idx++}`);
-            values.push(req.body[field]);
-          }
+          updateObj[field] = req.body[field];
         }
       }
 
-      if (updates.length === 0) {
+      if (Object.keys(updateObj).length === 0) {
         return res.status(400).json({ error: 'No fields to update' });
       }
 
-      updates.push('updated_at = NOW()');
-      values.push(req.params.id);
-
-      await query(
-        `UPDATE plugin_registry SET ${updates.join(', ')} WHERE id = $${idx}`,
-        values
-      );
+      const { error: updateError } = await supabase
+        .from('plugin_registry')
+        .update(updateObj)
+        .eq('id', req.params.id);
+      if (updateError) throw new Error(updateError.message);
 
       await logAudit({
         entityType: 'plugin',
@@ -136,8 +145,8 @@ router.put(
         details: { updated_fields: Object.keys(req.body).filter(k => fields.includes(k)) },
       });
 
-      const result = await query('SELECT * FROM plugin_registry WHERE id = $1', [req.params.id]);
-      res.json(result.rows[0]);
+      const { data } = await supabase.from('plugin_registry').select('*').eq('id', req.params.id).single();
+      res.json(data);
     } catch (err) {
       console.error('Error updating plugin:', err);
       res.status(500).json({ error: 'Failed to update plugin' });

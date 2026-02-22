@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query } from '../db/connection';
+import { supabase, query } from '../db/connection';
 import { config } from '../config';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -11,6 +11,7 @@ router.get('/social/analytics', async (req: Request, res: Response) => {
     const userId = req.user?.id || 'unknown';
     const { post_id, account_id } = req.query;
 
+    // Complex JOIN query – use raw SQL via RPC wrapper
     let sql = `SELECT spa.*, sp.caption, sp.post_type, sp.published_at as post_published_at,
                       sa.account_name, sa.account_type, sa.account_avatar_url
                FROM social_post_analytics spa
@@ -43,6 +44,7 @@ router.get('/social/analytics/summary', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
 
+    // Complex aggregation queries – use raw SQL via RPC wrapper
     const totalPosts = await query(
       "SELECT COUNT(*)::int as count FROM social_posts WHERE user_id = $1 AND status = 'published'",
       [userId]
@@ -103,7 +105,7 @@ router.get('/social/analytics/summary', async (req: Request, res: Response) => {
     }
 
     res.json({
-      total_published: totalPosts.rows[0].count,
+      total_published: totalPosts.rows[0]?.count ?? 0,
       ...totalEngagement.rows[0],
       by_platform: byPlatform.rows,
       recent_posts: recentPosts.rows,
@@ -120,15 +122,20 @@ router.post('/social/analytics/fetch/:postId', async (req: Request, res: Respons
     const userId = req.user?.id || 'unknown';
     const { postId } = req.params;
 
-    const postResult = await query(
-      "SELECT * FROM social_posts WHERE id = $1 AND user_id = $2 AND status = 'published'",
-      [postId, userId]
-    );
+    const { data: postData, error: postError } = await supabase
+      .from('social_posts')
+      .select('*')
+      .eq('id', postId)
+      .eq('user_id', userId)
+      .eq('status', 'published')
+      .maybeSingle();
+    if (postError) throw new Error(postError.message);
 
-    if (postResult.rows.length === 0) {
+    if (!postData) {
       return res.status(404).json({ error: 'Published post not found' });
     }
 
+    // Complex JOIN – use raw SQL via RPC wrapper
     const accountsResult = await query(
       `SELECT spa.*, sa.account_type, sa.access_token, sa.page_id, sa.instagram_account_id
        FROM social_post_accounts spa
@@ -151,13 +158,21 @@ router.post('/social/analytics/fetch/:postId', async (req: Request, res: Respons
           }
         }
 
-        await query(
-          `INSERT INTO social_post_analytics (id, social_post_id, social_account_id, platform_post_id, impressions, reach, engagement, likes, comments, shares, saves, clicks)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-          [uuidv4(), postId, account.social_account_id, account.platform_post_id,
-           metrics.impressions, metrics.reach, metrics.engagement, metrics.likes,
-           metrics.comments, metrics.shares, metrics.saves, metrics.clicks]
-        );
+        const { error: insertError } = await supabase.from('social_post_analytics').insert({
+          id: uuidv4(),
+          social_post_id: postId,
+          social_account_id: account.social_account_id,
+          platform_post_id: account.platform_post_id,
+          impressions: metrics.impressions,
+          reach: metrics.reach,
+          engagement: metrics.engagement,
+          likes: metrics.likes,
+          comments: metrics.comments,
+          shares: metrics.shares,
+          saves: metrics.saves,
+          clicks: metrics.clicks,
+        });
+        if (insertError) throw new Error(insertError.message);
 
         results.push({ account_id: account.social_account_id, ...metrics });
       } catch (fetchErr) {

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 import * as fs from 'fs';
@@ -12,30 +12,26 @@ router.get('/social/media', async (req: Request, res: Response) => {
     const userId = req.user?.id || 'unknown';
     const { file_type, limit: limitParam, offset: offsetParam } = req.query;
 
-    let sql = 'SELECT * FROM media_library WHERE user_id = $1';
-    const params: unknown[] = [userId];
-    let idx = 2;
-
-    if (file_type) {
-      sql += ` AND file_type = $${idx++}`;
-      params.push(file_type);
-    }
-
-    sql += ' ORDER BY created_at DESC';
-
     const pageLimit = Math.min(parseInt(limitParam as string) || 50, 200);
     const pageOffset = parseInt(offsetParam as string) || 0;
-    sql += ` LIMIT $${idx++} OFFSET $${idx++}`;
-    params.push(pageLimit, pageOffset);
 
-    const result = await query(sql, params);
+    let mediaQuery = supabase
+      .from('media_library')
+      .select('*', { count: 'exact' })
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(pageOffset, pageOffset + pageLimit - 1);
 
-    const countSql = `SELECT COUNT(*)::int as count FROM media_library WHERE user_id = $1${file_type ? ' AND file_type = $2' : ''}`;
-    const countResult = await query(countSql, file_type ? [userId, file_type] : [userId]);
+    if (file_type) {
+      mediaQuery = mediaQuery.eq('file_type', String(file_type));
+    }
+
+    const { data, count, error } = await mediaQuery;
+    if (error) throw new Error(error.message);
 
     res.json({
-      media: result.rows,
-      total: countResult.rows[0].count,
+      media: data || [],
+      total: count ?? 0,
       limit: pageLimit,
       offset: pageOffset,
     });
@@ -59,11 +55,17 @@ router.post('/social/media/upload-url', async (req: Request, res: Response) => {
     const storageKey = `media/${userId}/${mediaId}${ext}`;
     const uploadUrl = `${config.storage.baseUrl}/${storageKey}`;
 
-    await query(
-      `INSERT INTO media_library (id, user_id, file_name, file_type, file_size, mime_type, url, storage_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [mediaId, userId, file_name, file_type, file_size || 0, mime_type || '', uploadUrl, storageKey]
-    );
+    const { error: insertError } = await supabase.from('media_library').insert({
+      id: mediaId,
+      user_id: userId,
+      file_name,
+      file_type,
+      file_size: file_size || 0,
+      mime_type: mime_type || '',
+      url: uploadUrl,
+      storage_key: storageKey,
+    });
+    if (insertError) throw new Error(insertError.message);
 
     const uploadDir = path.join(config.storage.uploadDir, 'media', userId);
     if (!fs.existsSync(uploadDir)) {
@@ -91,35 +93,35 @@ router.post('/social/media/confirm-upload', async (req: Request, res: Response) 
       return res.status(400).json({ error: 'media_id is required' });
     }
 
-    const existing = await query(
-      'SELECT * FROM media_library WHERE id = $1 AND user_id = $2',
-      [media_id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('media_library')
+      .select('*')
+      .eq('id', media_id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Media not found' });
     }
 
-    const updates: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const updateObj: Record<string, unknown> = {};
+    if (url) updateObj.url = url;
+    if (thumbnail_url) updateObj.thumbnail_url = thumbnail_url;
+    if (width) updateObj.width = width;
+    if (height) updateObj.height = height;
+    if (duration_seconds) updateObj.duration_seconds = duration_seconds;
 
-    if (url) { updates.push(`url = $${idx++}`); values.push(url); }
-    if (thumbnail_url) { updates.push(`thumbnail_url = $${idx++}`); values.push(thumbnail_url); }
-    if (width) { updates.push(`width = $${idx++}`); values.push(width); }
-    if (height) { updates.push(`height = $${idx++}`); values.push(height); }
-    if (duration_seconds) { updates.push(`duration_seconds = $${idx++}`); values.push(duration_seconds); }
-
-    if (updates.length > 0) {
-      values.push(media_id);
-      await query(
-        `UPDATE media_library SET ${updates.join(', ')} WHERE id = $${idx}`,
-        values
-      );
+    if (Object.keys(updateObj).length > 0) {
+      const { error: updateError } = await supabase
+        .from('media_library')
+        .update(updateObj)
+        .eq('id', media_id);
+      if (updateError) throw new Error(updateError.message);
     }
 
-    const result = await query('SELECT * FROM media_library WHERE id = $1', [media_id]);
-    res.json(result.rows[0]);
+    const { data } = await supabase.from('media_library').select('*').eq('id', media_id).single();
+    res.json(data);
   } catch (err) {
     console.error('Error confirming upload:', err);
     res.status(500).json({ error: 'Failed to confirm upload' });
@@ -129,25 +131,30 @@ router.post('/social/media/confirm-upload', async (req: Request, res: Response) 
 router.delete('/social/media/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const existing = await query(
-      'SELECT * FROM media_library WHERE id = $1 AND user_id = $2',
-      [req.params.id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('media_library')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Media not found' });
     }
 
-    const inUse = await query(
-      'SELECT COUNT(*)::int as count FROM social_post_media WHERE media_id = $1',
-      [req.params.id]
-    );
+    const { data: inUseData, error: inUseError } = await supabase
+      .from('social_post_media')
+      .select('id', { count: 'exact' })
+      .eq('media_id', req.params.id);
+    if (inUseError) throw new Error(inUseError.message);
 
-    if (inUse.rows[0].count > 0) {
+    if (inUseData && inUseData.length > 0) {
       return res.status(400).json({ error: 'Media is in use by one or more posts. Remove from posts first.' });
     }
 
-    await query('DELETE FROM media_library WHERE id = $1', [req.params.id]);
+    const { error: deleteError } = await supabase.from('media_library').delete().eq('id', req.params.id);
+    if (deleteError) throw new Error(deleteError.message);
     res.json({ message: 'Media deleted' });
   } catch (err) {
     console.error('Error deleting media:', err);

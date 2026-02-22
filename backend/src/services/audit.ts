@@ -1,4 +1,4 @@
-import { query } from '../db/connection';
+import { supabase } from '../db/connection';
 import { UserRole } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -13,34 +13,42 @@ interface AuditEntry {
 
 export async function logAudit(entry: AuditEntry) {
   const id = uuidv4();
-  await query(
-    `INSERT INTO audit_log (id, entity_type, entity_id, action, actor, actor_role, details)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [
-      id,
-      entry.entityType,
-      entry.entityId,
-      entry.action,
-      entry.actor,
-      entry.actorRole,
-      JSON.stringify(entry.details || {}),
-    ]
-  );
+  const { error } = await supabase.from('audit_log').insert({
+    id,
+    entity_type: entry.entityType,
+    entity_id: entry.entityId,
+    action: entry.action,
+    actor: entry.actor,
+    actor_role: entry.actorRole,
+    details: entry.details || {},
+  });
+  if (error) {
+    throw new Error(`Failed to insert audit log: ${error.message}`);
+  }
   return id;
 }
 
 export async function getAuditLog(entityType: string, entityId: string) {
-  const result = await query(
-    `SELECT * FROM audit_log WHERE entity_type = $1 AND entity_id = $2 ORDER BY created_at DESC`,
-    [entityType, entityId]
-  );
-  return result.rows;
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('*')
+    .eq('entity_type', entityType)
+    .eq('entity_id', entityId)
+    .order('created_at', { ascending: false });
+  if (error) {
+    throw new Error(`Failed to fetch audit log: ${error.message}`);
+  }
+  return data || [];
 }
 
 export async function getRecentAuditLog(limit = 50) {
-  const result = await query(
-    `SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1`,
-    [limit]
-  );
-  return result.rows;
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    throw new Error(`Failed to fetch recent audit log: ${error.message}`);
+  }
+  return data || [];
 }

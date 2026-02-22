@@ -1,4 +1,4 @@
-import { query } from '../db/connection';
+import { supabase, query } from '../db/connection';
 import { config } from '../config';
 
 const GRAPH_URL = `https://graph.facebook.com/${config.meta.graphApiVersion}`;
@@ -11,10 +11,15 @@ interface PublishResult {
 }
 
 export async function publishToAccounts(postId: string): Promise<PublishResult[]> {
-  const postResult = await query('SELECT * FROM social_posts WHERE id = $1', [postId]);
-  if (postResult.rows.length === 0) throw new Error('Post not found');
-  const post = postResult.rows[0];
+  const { data: post, error: postError } = await supabase
+    .from('social_posts')
+    .select('*')
+    .eq('id', postId)
+    .maybeSingle();
+  if (postError) throw new Error(postError.message);
+  if (!post) throw new Error('Post not found');
 
+  // Complex JOIN – use raw SQL via RPC wrapper
   const accountsResult = await query(
     `SELECT spa.*, sa.account_type, sa.access_token, sa.page_id, sa.instagram_account_id, sa.provider_account_id
      FROM social_post_accounts spa
@@ -23,6 +28,7 @@ export async function publishToAccounts(postId: string): Promise<PublishResult[]
     [postId]
   );
 
+  // Complex JOIN – use raw SQL via RPC wrapper
   const mediaResult = await query(
     `SELECT ml.* FROM social_post_media spm
      JOIN media_library ml ON spm.media_id = ml.id
@@ -55,38 +61,41 @@ export async function publishToAccounts(postId: string): Promise<PublishResult[]
         );
       }
 
-      await query(
-        "UPDATE social_post_accounts SET platform_status = 'published', platform_post_id = $1, published_at = NOW() WHERE id = $2",
-        [platformPostId, account.id]
-      );
+      const { error: pubUpdateErr } = await supabase
+        .from('social_post_accounts')
+        .update({ platform_status: 'published', platform_post_id: platformPostId })
+        .eq('id', account.id);
+      if (pubUpdateErr) throw new Error(pubUpdateErr.message);
 
       results.push({ accountId: account.social_account_id, success: true, platformPostId });
     } catch (err) {
       allSuccess = false;
       const errMsg = (err as Error).message;
-      await query(
-        "UPDATE social_post_accounts SET platform_status = 'failed', platform_error = $1 WHERE id = $2",
-        [errMsg, account.id]
-      );
+      const { error: failUpdateErr } = await supabase
+        .from('social_post_accounts')
+        .update({ platform_status: 'failed', platform_error: errMsg })
+        .eq('id', account.id);
+      if (failUpdateErr) console.error('Error updating account status:', failUpdateErr.message);
       results.push({ accountId: account.social_account_id, success: false, error: errMsg });
     }
   }
 
   if (allSuccess && results.length > 0) {
-    await query(
-      "UPDATE social_posts SET status = 'published', published_at = NOW(), updated_at = NOW() WHERE id = $1",
-      [postId]
-    );
+    const { error: successErr } = await supabase
+      .from('social_posts')
+      .update({ status: 'published' })
+      .eq('id', postId);
+    if (successErr) console.error('Error updating post status:', successErr.message);
   } else if (!allSuccess) {
     const anySuccess = results.some(r => r.success);
-    await query(
-      `UPDATE social_posts SET status = $1, error_message = $2, retry_count = retry_count + 1, updated_at = NOW() WHERE id = $3`,
-      [
-        anySuccess ? 'published' : 'failed',
-        results.filter(r => !r.success).map(r => r.error).join('; '),
-        postId,
-      ]
-    );
+    const { error: failErr } = await supabase
+      .from('social_posts')
+      .update({
+        status: anySuccess ? 'published' : 'failed',
+        error_message: results.filter(r => !r.success).map(r => r.error).join('; '),
+      })
+      .eq('id', postId);
+    if (failErr) console.error('Error updating post status:', failErr.message);
   }
 
   return results;

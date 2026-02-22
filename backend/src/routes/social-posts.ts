@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query } from '../db/connection';
+import { supabase, query } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { logAudit } from '../services/audit';
 
@@ -10,6 +10,10 @@ router.get('/social/posts', async (req: Request, res: Response) => {
     const userId = req.user?.id || 'unknown';
     const { status, limit: limitParam, offset: offsetParam } = req.query;
 
+    const pageLimit = Math.min(parseInt(limitParam as string) || 50, 200);
+    const pageOffset = parseInt(offsetParam as string) || 0;
+
+    // Complex JOINs with aggregations require raw SQL via exec_sql RPC
     let sql = `SELECT sp.*,
       COALESCE(
         json_agg(DISTINCT jsonb_build_object('id', ml.id, 'url', ml.url, 'thumbnail_url', ml.thumbnail_url, 'file_type', ml.file_type, 'file_name', ml.file_name)) FILTER (WHERE ml.id IS NOT NULL),
@@ -35,9 +39,6 @@ router.get('/social/posts', async (req: Request, res: Response) => {
     }
 
     sql += ` GROUP BY sp.id ORDER BY COALESCE(sp.scheduled_at, sp.created_at) DESC`;
-
-    const pageLimit = Math.min(parseInt(limitParam as string) || 50, 200);
-    const pageOffset = parseInt(offsetParam as string) || 0;
     sql += ` LIMIT $${idx++} OFFSET $${idx++}`;
     params.push(pageLimit, pageOffset);
 
@@ -50,7 +51,7 @@ router.get('/social/posts', async (req: Request, res: Response) => {
 
     res.json({
       posts: result.rows,
-      total: countResult.rows[0].count,
+      total: countResult.rows[0]?.count ?? 0,
       limit: pageLimit,
       offset: pageOffset,
     });
@@ -63,6 +64,7 @@ router.get('/social/posts', async (req: Request, res: Response) => {
 router.get('/social/posts/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
+    // Complex JOIN query – use raw SQL via RPC wrapper
     const result = await query(
       `SELECT sp.*,
         COALESCE(
@@ -108,26 +110,37 @@ router.post('/social/posts', async (req: Request, res: Response) => {
     } = req.body;
 
     const postId = uuidv4();
-    const status = scheduled_at ? 'scheduled' : 'draft';
+    const postStatus = scheduled_at ? 'scheduled' : 'draft';
 
-    await query(
-      `INSERT INTO social_posts (id, user_id, content_item_id, caption, hashtags, post_type, status, scheduled_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [postId, userId, content_item_id, caption, hashtags, post_type, status, scheduled_at]
-    );
+    const { error: insertError } = await supabase.from('social_posts').insert({
+      id: postId,
+      user_id: userId,
+      content_item_id,
+      caption,
+      hashtags,
+      post_type,
+      status: postStatus,
+      scheduled_at,
+    });
+    if (insertError) throw new Error(insertError.message);
 
     for (let i = 0; i < (media_ids as string[]).length; i++) {
-      await query(
-        'INSERT INTO social_post_media (id, social_post_id, media_id, sort_order) VALUES ($1, $2, $3, $4)',
-        [uuidv4(), postId, media_ids[i], i]
-      );
+      const { error: mediaErr } = await supabase.from('social_post_media').insert({
+        id: uuidv4(),
+        social_post_id: postId,
+        media_id: media_ids[i],
+        sort_order: i,
+      });
+      if (mediaErr) throw new Error(mediaErr.message);
     }
 
     for (const accountId of account_ids as string[]) {
-      await query(
-        'INSERT INTO social_post_accounts (id, social_post_id, social_account_id) VALUES ($1, $2, $3)',
-        [uuidv4(), postId, accountId]
-      );
+      const { error: acctErr } = await supabase.from('social_post_accounts').insert({
+        id: uuidv4(),
+        social_post_id: postId,
+        social_account_id: accountId,
+      });
+      if (acctErr) throw new Error(acctErr.message);
     }
 
     await logAudit({
@@ -136,11 +149,11 @@ router.post('/social/posts', async (req: Request, res: Response) => {
       action: 'create',
       actor: userId,
       actorRole: req.user?.role || 'staff',
-      details: { post_type, status, account_count: (account_ids as string[]).length },
+      details: { post_type, status: postStatus, account_count: (account_ids as string[]).length },
     });
 
-    const result = await query('SELECT * FROM social_posts WHERE id = $1', [postId]);
-    res.status(201).json(result.rows[0]);
+    const { data } = await supabase.from('social_posts').select('*').eq('id', postId).single();
+    res.status(201).json(data);
   } catch (err) {
     console.error('Error creating social post:', err);
     res.status(500).json({ error: 'Failed to create social post' });
@@ -150,65 +163,69 @@ router.post('/social/posts', async (req: Request, res: Response) => {
 router.put('/social/posts/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const existing = await query(
-      'SELECT * FROM social_posts WHERE id = $1 AND user_id = $2',
-      [req.params.id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('social_posts')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    const post = existing.rows[0];
-    if (post.status === 'published' || post.status === 'publishing') {
+    if (existing.status === 'published' || existing.status === 'publishing') {
       return res.status(400).json({ error: 'Cannot edit a published or publishing post' });
     }
 
     const { caption, hashtags, post_type, scheduled_at, account_ids, media_ids } = req.body;
 
-    const updates: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-
-    if (caption !== undefined) { updates.push(`caption = $${idx++}`); values.push(caption); }
-    if (hashtags !== undefined) { updates.push(`hashtags = $${idx++}`); values.push(hashtags); }
-    if (post_type !== undefined) { updates.push(`post_type = $${idx++}`); values.push(post_type); }
+    const updateObj: Record<string, unknown> = {};
+    if (caption !== undefined) updateObj.caption = caption;
+    if (hashtags !== undefined) updateObj.hashtags = hashtags;
+    if (post_type !== undefined) updateObj.post_type = post_type;
     if (scheduled_at !== undefined) {
-      updates.push(`scheduled_at = $${idx++}`);
-      values.push(scheduled_at);
-      if (scheduled_at && post.status === 'draft') {
-        updates.push(`status = 'scheduled'`);
-      } else if (!scheduled_at && post.status === 'scheduled') {
-        updates.push(`status = 'draft'`);
+      updateObj.scheduled_at = scheduled_at;
+      if (scheduled_at && existing.status === 'draft') {
+        updateObj.status = 'scheduled';
+      } else if (!scheduled_at && existing.status === 'scheduled') {
+        updateObj.status = 'draft';
       }
     }
 
-    if (updates.length > 0) {
-      updates.push('updated_at = NOW()');
-      values.push(req.params.id);
-      await query(
-        `UPDATE social_posts SET ${updates.join(', ')} WHERE id = $${idx}`,
-        values
-      );
+    if (Object.keys(updateObj).length > 0) {
+      const { error: updateError } = await supabase
+        .from('social_posts')
+        .update(updateObj)
+        .eq('id', req.params.id);
+      if (updateError) throw new Error(updateError.message);
     }
 
     if (media_ids !== undefined) {
-      await query('DELETE FROM social_post_media WHERE social_post_id = $1', [req.params.id]);
+      const { error: delMediaErr } = await supabase.from('social_post_media').delete().eq('social_post_id', req.params.id);
+      if (delMediaErr) throw new Error(delMediaErr.message);
       for (let i = 0; i < (media_ids as string[]).length; i++) {
-        await query(
-          'INSERT INTO social_post_media (id, social_post_id, media_id, sort_order) VALUES ($1, $2, $3, $4)',
-          [uuidv4(), req.params.id, media_ids[i], i]
-        );
+        const { error: mediaErr } = await supabase.from('social_post_media').insert({
+          id: uuidv4(),
+          social_post_id: req.params.id,
+          media_id: media_ids[i],
+          sort_order: i,
+        });
+        if (mediaErr) throw new Error(mediaErr.message);
       }
     }
 
     if (account_ids !== undefined) {
-      await query('DELETE FROM social_post_accounts WHERE social_post_id = $1', [req.params.id]);
+      const { error: delAcctErr } = await supabase.from('social_post_accounts').delete().eq('social_post_id', req.params.id);
+      if (delAcctErr) throw new Error(delAcctErr.message);
       for (const accountId of account_ids as string[]) {
-        await query(
-          'INSERT INTO social_post_accounts (id, social_post_id, social_account_id) VALUES ($1, $2, $3)',
-          [uuidv4(), req.params.id, accountId]
-        );
+        const { error: acctErr } = await supabase.from('social_post_accounts').insert({
+          id: uuidv4(),
+          social_post_id: req.params.id,
+          social_account_id: accountId,
+        });
+        if (acctErr) throw new Error(acctErr.message);
       }
     }
 
@@ -221,8 +238,8 @@ router.put('/social/posts/:id', async (req: Request, res: Response) => {
       details: { updated_fields: Object.keys(req.body) },
     });
 
-    const result = await query('SELECT * FROM social_posts WHERE id = $1', [req.params.id]);
-    res.json(result.rows[0]);
+    const { data } = await supabase.from('social_posts').select('*').eq('id', req.params.id).single();
+    res.json(data);
   } catch (err) {
     console.error('Error updating social post:', err);
     res.status(500).json({ error: 'Failed to update social post' });
@@ -232,20 +249,24 @@ router.put('/social/posts/:id', async (req: Request, res: Response) => {
 router.delete('/social/posts/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const existing = await query(
-      'SELECT * FROM social_posts WHERE id = $1 AND user_id = $2',
-      [req.params.id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('social_posts')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    if (existing.rows[0].status === 'publishing') {
+    if (existing.status === 'publishing') {
       return res.status(400).json({ error: 'Cannot delete a post that is currently publishing' });
     }
 
-    await query('DELETE FROM social_posts WHERE id = $1', [req.params.id]);
+    const { error: deleteError } = await supabase.from('social_posts').delete().eq('id', req.params.id);
+    if (deleteError) throw new Error(deleteError.message);
 
     await logAudit({
       entityType: 'social_post',
@@ -266,44 +287,59 @@ router.delete('/social/posts/:id', async (req: Request, res: Response) => {
 router.post('/social/posts/:id/duplicate', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const existing = await query(
-      'SELECT * FROM social_posts WHERE id = $1 AND user_id = $2',
-      [req.params.id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('social_posts')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    const original = existing.rows[0];
     const newId = uuidv4();
 
-    await query(
-      `INSERT INTO social_posts (id, user_id, content_item_id, caption, hashtags, post_type, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'draft')`,
-      [newId, userId, original.content_item_id, original.caption, original.hashtags, original.post_type]
-    );
+    const { error: insertError } = await supabase.from('social_posts').insert({
+      id: newId,
+      user_id: userId,
+      content_item_id: existing.content_item_id,
+      caption: existing.caption,
+      hashtags: existing.hashtags,
+      post_type: existing.post_type,
+      status: 'draft',
+    });
+    if (insertError) throw new Error(insertError.message);
 
-    const mediaResult = await query(
-      'SELECT * FROM social_post_media WHERE social_post_id = $1 ORDER BY sort_order',
-      [req.params.id]
-    );
-    for (const media of mediaResult.rows) {
-      await query(
-        'INSERT INTO social_post_media (id, social_post_id, media_id, sort_order) VALUES ($1, $2, $3, $4)',
-        [uuidv4(), newId, media.media_id, media.sort_order]
-      );
+    const { data: mediaRows } = await supabase
+      .from('social_post_media')
+      .select('*')
+      .eq('social_post_id', req.params.id)
+      .order('sort_order', { ascending: true });
+
+    for (const media of mediaRows || []) {
+      const { error: mediaErr } = await supabase.from('social_post_media').insert({
+        id: uuidv4(),
+        social_post_id: newId,
+        media_id: media.media_id,
+        sort_order: media.sort_order,
+      });
+      if (mediaErr) throw new Error(mediaErr.message);
     }
 
-    const accountsResult = await query(
-      'SELECT * FROM social_post_accounts WHERE social_post_id = $1',
-      [req.params.id]
-    );
-    for (const account of accountsResult.rows) {
-      await query(
-        'INSERT INTO social_post_accounts (id, social_post_id, social_account_id) VALUES ($1, $2, $3)',
-        [uuidv4(), newId, account.social_account_id]
-      );
+    const { data: accountRows } = await supabase
+      .from('social_post_accounts')
+      .select('*')
+      .eq('social_post_id', req.params.id);
+
+    for (const account of accountRows || []) {
+      const { error: acctErr } = await supabase.from('social_post_accounts').insert({
+        id: uuidv4(),
+        social_post_id: newId,
+        social_account_id: account.social_account_id,
+      });
+      if (acctErr) throw new Error(acctErr.message);
     }
 
     await logAudit({
@@ -315,8 +351,8 @@ router.post('/social/posts/:id/duplicate', async (req: Request, res: Response) =
       details: { original_id: req.params.id },
     });
 
-    const result = await query('SELECT * FROM social_posts WHERE id = $1', [newId]);
-    res.status(201).json(result.rows[0]);
+    const { data } = await supabase.from('social_posts').select('*').eq('id', newId).single();
+    res.status(201).json(data);
   } catch (err) {
     console.error('Error duplicating social post:', err);
     res.status(500).json({ error: 'Failed to duplicate social post' });
@@ -326,43 +362,51 @@ router.post('/social/posts/:id/duplicate', async (req: Request, res: Response) =
 router.post('/social/posts/:id/publish', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const existing = await query(
-      'SELECT * FROM social_posts WHERE id = $1 AND user_id = $2',
-      [req.params.id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('social_posts')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    const post = existing.rows[0];
-    if (post.status === 'published' || post.status === 'publishing') {
+    if (existing.status === 'published' || existing.status === 'publishing') {
       return res.status(400).json({ error: 'Post is already published or publishing' });
     }
 
-    await query(
-      "UPDATE social_posts SET status = 'publishing', updated_at = NOW() WHERE id = $1",
-      [req.params.id]
-    );
+    const { error: statusErr } = await supabase
+      .from('social_posts')
+      .update({ status: 'publishing' })
+      .eq('id', req.params.id);
+    if (statusErr) throw new Error(statusErr.message);
 
-    await query(
-      "UPDATE social_post_accounts SET platform_status = 'publishing' WHERE social_post_id = $1",
-      [req.params.id]
-    );
+    const { error: acctStatusErr } = await supabase
+      .from('social_post_accounts')
+      .update({ platform_status: 'publishing' })
+      .eq('social_post_id', req.params.id);
+    if (acctStatusErr) throw new Error(acctStatusErr.message);
 
     try {
       const { publishToAccounts } = await import('../services/meta-publisher');
       await publishToAccounts(req.params.id);
     } catch (pubErr) {
       console.error('Publishing error:', pubErr);
-      await query(
-        "UPDATE social_posts SET status = 'failed', error_message = $1, retry_count = retry_count + 1, updated_at = NOW() WHERE id = $2",
-        [(pubErr as Error).message, req.params.id]
-      );
+      const { error: failErr } = await supabase
+        .from('social_posts')
+        .update({
+          status: 'failed',
+          error_message: (pubErr as Error).message,
+        })
+        .eq('id', req.params.id);
+      if (failErr) console.error('Error updating post status:', failErr.message);
     }
 
-    const result = await query('SELECT * FROM social_posts WHERE id = $1', [req.params.id]);
-    res.json(result.rows[0]);
+    const { data } = await supabase.from('social_posts').select('*').eq('id', req.params.id).single();
+    res.json(data);
   } catch (err) {
     console.error('Error publishing social post:', err);
     res.status(500).json({ error: 'Failed to publish social post' });
@@ -374,25 +418,28 @@ router.put('/social/posts/:id/reschedule', async (req: Request, res: Response) =
     const userId = req.user?.id || 'unknown';
     const { scheduled_at } = req.body;
 
-    const existing = await query(
-      'SELECT * FROM social_posts WHERE id = $1 AND user_id = $2',
-      [req.params.id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('social_posts')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    const post = existing.rows[0];
-    if (post.status === 'published' || post.status === 'publishing') {
+    if (existing.status === 'published' || existing.status === 'publishing') {
       return res.status(400).json({ error: 'Cannot reschedule a published or publishing post' });
     }
 
     const newStatus = scheduled_at ? 'scheduled' : 'draft';
-    await query(
-      'UPDATE social_posts SET scheduled_at = $1, status = $2, updated_at = NOW() WHERE id = $3',
-      [scheduled_at, newStatus, req.params.id]
-    );
+    const { error: updateError } = await supabase
+      .from('social_posts')
+      .update({ scheduled_at, status: newStatus })
+      .eq('id', req.params.id);
+    if (updateError) throw new Error(updateError.message);
 
     await logAudit({
       entityType: 'social_post',
@@ -403,8 +450,8 @@ router.put('/social/posts/:id/reschedule', async (req: Request, res: Response) =
       details: { scheduled_at },
     });
 
-    const result = await query('SELECT * FROM social_posts WHERE id = $1', [req.params.id]);
-    res.json(result.rows[0]);
+    const { data } = await supabase.from('social_posts').select('*').eq('id', req.params.id).single();
+    res.json(data);
   } catch (err) {
     console.error('Error rescheduling social post:', err);
     res.status(500).json({ error: 'Failed to reschedule social post' });

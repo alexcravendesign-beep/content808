@@ -1,19 +1,22 @@
 import { Router, Request, Response } from 'express';
-import { query } from '../db/connection';
+import { supabase } from '../db/connection';
 
 const router = Router();
+
+const ACCOUNT_COLUMNS = 'id, user_id, provider, provider_account_id, account_type, account_name, account_avatar_url, token_expires_at, long_lived_token, page_id, instagram_account_id, is_active, metadata, created_at, updated_at';
 
 router.get('/social/accounts', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const result = await query(
-      `SELECT id, user_id, provider, provider_account_id, account_type, account_name, account_avatar_url,
-              token_expires_at, long_lived_token, page_id, instagram_account_id, is_active, metadata, created_at, updated_at
-       FROM social_accounts WHERE user_id = $1 ORDER BY account_type, account_name`,
-      [userId]
-    );
+    const { data, error } = await supabase
+      .from('social_accounts')
+      .select(ACCOUNT_COLUMNS)
+      .eq('user_id', userId)
+      .order('account_type', { ascending: true })
+      .order('account_name', { ascending: true });
+    if (error) throw new Error(error.message);
 
-    const accounts = result.rows.map((row) => ({
+    const accounts = (data || []).map((row) => ({
       ...row,
       token_status: getTokenStatus(row.token_expires_at),
     }));
@@ -28,18 +31,18 @@ router.get('/social/accounts', async (req: Request, res: Response) => {
 router.get('/social/accounts/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const result = await query(
-      `SELECT id, user_id, provider, provider_account_id, account_type, account_name, account_avatar_url,
-              token_expires_at, long_lived_token, page_id, instagram_account_id, is_active, metadata, created_at, updated_at
-       FROM social_accounts WHERE id = $1 AND user_id = $2`,
-      [req.params.id, userId]
-    );
+    const { data: account, error } = await supabase
+      .from('social_accounts')
+      .select(ACCOUNT_COLUMNS)
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
 
-    if (result.rows.length === 0) {
+    if (!account) {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    const account = result.rows[0];
     res.json({ ...account, token_status: getTokenStatus(account.token_expires_at) });
   } catch (err) {
     console.error('Error fetching social account:', err);
@@ -50,20 +53,24 @@ router.get('/social/accounts/:id', async (req: Request, res: Response) => {
 router.put('/social/accounts/:id/toggle', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const existing = await query(
-      'SELECT * FROM social_accounts WHERE id = $1 AND user_id = $2',
-      [req.params.id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('social_accounts')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    const newStatus = !existing.rows[0].is_active;
-    await query(
-      'UPDATE social_accounts SET is_active = $1, updated_at = NOW() WHERE id = $2',
-      [newStatus, req.params.id]
-    );
+    const newStatus = !existing.is_active;
+    const { error: updateError } = await supabase
+      .from('social_accounts')
+      .update({ is_active: newStatus })
+      .eq('id', req.params.id);
+    if (updateError) throw new Error(updateError.message);
 
     res.json({ id: req.params.id, is_active: newStatus });
   } catch (err) {
@@ -75,16 +82,20 @@ router.put('/social/accounts/:id/toggle', async (req: Request, res: Response) =>
 router.delete('/social/accounts/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id || 'unknown';
-    const existing = await query(
-      'SELECT * FROM social_accounts WHERE id = $1 AND user_id = $2',
-      [req.params.id, userId]
-    );
+    const { data: existing, error: fetchError } = await supabase
+      .from('social_accounts')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    await query('DELETE FROM social_accounts WHERE id = $1', [req.params.id]);
+    const { error: deleteError } = await supabase.from('social_accounts').delete().eq('id', req.params.id);
+    if (deleteError) throw new Error(deleteError.message);
     res.json({ message: 'Account disconnected' });
   } catch (err) {
     console.error('Error disconnecting account:', err);
