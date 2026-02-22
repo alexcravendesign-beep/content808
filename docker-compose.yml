@@ -29,6 +29,11 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       CORS_ORIGIN: "*"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-gemini-2.0-flash}
     ports:
       - "54000:4000"
     depends_on:
