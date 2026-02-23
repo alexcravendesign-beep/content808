@@ -510,7 +510,7 @@ async function getItemAndProduct(itemId: string) {
   const productTitle = item.product_title || '';
   const { data: products, error: productErr } = await supabase
     .from('products')
-    .select('id,name,images,infographic_url,infographic_prompt,brand')
+    .select('id,name,brand,category,description,features,technical_specs,benefits,images,infographic_url,infographic_prompt')
     .or(`name.ilike.%${productTitle}%,brand.ilike.%${item.brand || ''}%`)
     .limit(1);
   if (productErr) throw new Error(productErr.message);
@@ -524,6 +524,64 @@ function normalizePublicUrl(url: string) {
   return String(url)
     .replace('http://localhost:8000', 'https://supabase.cravencooling.services')
     .replace('http://host.docker.internal:8000', 'https://supabase.cravencooling.services');
+}
+
+function asLines(v: unknown, take = 6): string {
+  if (Array.isArray(v)) return v.filter(Boolean).slice(0, take).join('\n');
+  if (typeof v === 'string') return v;
+  return '';
+}
+
+function buildInfographicPrompt(product: Record<string, unknown>) {
+  const template = `Create a professional product infographic design featuring:
+
+PRODUCT INFORMATION:
+- Name: {{NAME}}
+- Category: {{CATEGORY}}
+- Description: {{DESCRIPTION}}
+
+KEY FEATURES:
+{{FEATURES}}
+
+TECHNICAL SPECIFICATIONS:
+{{SPECS}}
+
+BENEFITS:
+{{BENEFITS}}
+
+BRAND IDENTITY:
+- Visual Style: Modern and Professional
+- Brand Colors: {{BRAND_COLORS}}
+- Brand Values: Quality, Innovation, Trust
+- Logo: Include the provided logo image in the top-left corner
+
+DESIGN REQUIREMENTS:
+- Create a clean, modern infographic layout with clear visual hierarchy
+- Use the brand colors prominently throughout the design
+- Include data visualization elements (icons, charts, comparison graphics)
+- Organize information in digestible sections with clear headings
+- Professional business presentation aesthetic
+- Include visual representations of key specifications
+- Use iconography to represent features and benefits
+- Maintain whitespace for readability
+- Typography should be bold and legible
+- NO product photography - focus on data visualization and typography
+- Aspect ratio: Portrait 9:16 (1080x1920)
+
+OUTPUT STYLE: Modern corporate infographic, flat design aesthetic, professional marketing material quality, suitable for presentations and social media.`;
+
+  return template
+    .replace('{{NAME}}', String(product.name || 'Unknown Product'))
+    .replace('{{CATEGORY}}', String(product.category || 'Commercial Refrigeration'))
+    .replace('{{DESCRIPTION}}', String(product.description || 'Professional commercial product for demanding environments.'))
+    .replace('{{FEATURES}}', asLines(product.features, 6) || 'Professional build\nReliable operation\nCommercial grade components')
+    .replace('{{SPECS}}', asLines(product.technical_specs, 6) || 'See product specification sheet')
+    .replace('{{BENEFITS}}', asLines(product.benefits, 5) || 'Quality | Reliability | Performance')
+    .replace('{{BRAND_COLORS}}', 'Blue (#005F87), Teal (#00B7C6)');
+}
+
+function buildHeroPrompt(productName: string) {
+  return `Create a branded Fridgesmart story hero image (1080x1920, 9:16). Inputs: First image is the Fridgesmart branded background template. Second image is the product photo/cutout. Rules: Preserve the background and logo exactly. Place product in the lower half, centered horizontally. Keep product large and clear with natural shadow grounding. Add product name text at the bottom center. Product name text must be bold, white, highly legible. Add subtle dark gradient behind bottom text for readability. Keep a clean premium look, no extra icons, no data boxes, no clutter. Do NOT crop the logo area at top. Do NOT alter brand colors. Bottom text: ${productName}`;
 }
 
 async function createOutput(contentItemId: string, output_type: string, output_data: Record<string, unknown>) {
@@ -589,15 +647,18 @@ router.post('/items/:id/generate-infographic', [param('id').isUUID()], async (re
     const { item, product } = await getItemAndProduct(req.params.id);
     if (!product.infographic_url) return res.status(422).json({ error: 'Product has no infographic_url yet' });
 
+    const prompt = buildInfographicPrompt(product as Record<string, unknown>);
+    if (!prompt.trim()) return res.status(422).json({ error: 'Infographic prompt is empty' });
+
     await createOutput(item.id, 'infographic_image', {
       url: normalizePublicUrl(product.infographic_url),
-      prompt: product.infographic_prompt || null,
+      prompt,
       product_name: product.name,
       mode: 'infographic',
       status: 'completed',
     });
 
-    return res.json({ ok: true, mode: 'infographic', url: normalizePublicUrl(product.infographic_url), product_name: product.name });
+    return res.json({ ok: true, mode: 'infographic', url: normalizePublicUrl(product.infographic_url), product_name: product.name, prompt });
   } catch (err) {
     console.error('generate-infographic failed', err);
     return res.status(500).json({ error: err instanceof Error ? err.message : 'generate-infographic failed' });
@@ -613,7 +674,7 @@ router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Requ
       : null;
     if (!productImage) return res.status(422).json({ error: 'Product has no source image' });
 
-    const heroPrompt = `Create Fridgesmart story hero using provided template + product image. Keep logo area untouched. Place product in lower half with name at bottom: ${product.name}`;
+    const heroPrompt = buildHeroPrompt(product.name);
     const heroUrl = await generateHeroImage(item.id, product.name, productImage);
 
     await createOutput(item.id, 'hero_image', {
@@ -685,7 +746,7 @@ router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body
           if (!product.infographic_url) throw new Error('Product has no infographic_url yet');
           await createOutput(item.id, 'infographic_image', {
             url: normalizePublicUrl(product.infographic_url),
-            prompt: product.infographic_prompt || null,
+            prompt: buildInfographicPrompt(product as Record<string, unknown>),
             product_name: product.name,
             mode: 'infographic',
             status: 'completed',
@@ -699,7 +760,7 @@ router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body
           const heroUrl = await generateHeroImage(item.id, product.name, img);
           await createOutput(item.id, 'hero_image', {
             url: heroUrl,
-            prompt: `Hero image for ${product.name}`,
+            prompt: buildHeroPrompt(product.name),
             product_name: product.name,
             mode: 'hero',
             status: 'completed',
@@ -709,7 +770,7 @@ router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body
           if (product.infographic_url) {
             await createOutput(item.id, 'infographic_image', {
               url: normalizePublicUrl(product.infographic_url),
-              prompt: product.infographic_prompt || null,
+              prompt: buildInfographicPrompt(product as Record<string, unknown>),
               product_name: product.name,
               mode: 'infographic',
               status: 'completed',
@@ -722,7 +783,7 @@ router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body
             const heroUrl = await generateHeroImage(item.id, product.name, img);
             await createOutput(item.id, 'hero_image', {
               url: heroUrl,
-              prompt: `Hero image for ${product.name}`,
+              prompt: buildHeroPrompt(product.name),
               product_name: product.name,
               mode: 'hero',
               status: 'completed',
