@@ -76,6 +76,7 @@ export const api = {
   getActivity: (limit = 100) => request<{ entries: AuditEntry[] }>(`/audit?limit=${limit}`),
 
   agentFill: (id: string) => request<{ jobId: string }>(`/items/${id}/agent-fill`, { method: 'POST' }),
+  syncProductAssets: (id: string) => request<{ ok: boolean; created: number; product_name: string }>(`/items/${id}/sync-product-assets`, { method: 'POST' }),
 };
 
 export interface ContentItem {

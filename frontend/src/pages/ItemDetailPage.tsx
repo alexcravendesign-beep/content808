@@ -113,6 +113,17 @@ export function ItemDetailPage() {
     }
   };
 
+  const handleSyncAssets = async () => {
+    if (!item) return;
+    try {
+      const res = await api.syncProductAssets(item.id);
+      toast(`Synced ${res.created} assets from product`, "success");
+      fetchItem();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Asset sync failed", "error");
+    }
+  };
+
   if (loading) return <DetailSkeleton />;
   if (!item) return <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Item not found</div>;
 
@@ -140,6 +151,9 @@ export function ItemDetailPage() {
                 <Sparkles className="h-3.5 w-3.5" />Generate Draft
               </button>
             )}
+            <button onClick={handleSyncAssets} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-cyan-600/20 to-blue-600/20 text-cyan-300 text-xs font-medium hover:from-cyan-600/30 hover:to-blue-600/30 transition-all" title="Pull infographic/product images into outputs">
+              <Package className="h-3.5 w-3.5" />Sync Product Assets
+            </button>
             <button onClick={() => setEditOpen(true)} className="p-2 rounded-md bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
               <Edit className="h-4 w-4" />
             </button>
@@ -291,34 +305,59 @@ export function ItemDetailPage() {
           {tab === "outputs" && (
             <div className="space-y-3">
               {outputs.length === 0 && <p className="text-sm text-[hsl(var(--th-text-muted))]">No outputs yet.</p>}
-              {outputs.map((o) => (
-                <div key={o.id} className="bg-[hsl(var(--th-input)/0.5)] rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="secondary">{o.output_type}</Badge>
-                    {o.created_by && <span className="text-[11px] text-[hsl(var(--th-text-muted))] italic">{o.created_by}</span>}
-                    <span className="text-[11px] text-[hsl(var(--th-text-muted))]">{format(new Date(o.created_at), "MMM d, h:mm a")}</span>
-                  </div>
-                  {o.output_type === "draft_copy" && typeof o.output_data.text === "string" ? (
-                    <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap">{o.output_data.text}</p>
-                  ) : o.output_type === "metadata" && Array.isArray(o.output_data.hashtags) ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {(o.output_data.hashtags as string[]).map((tag, i) => (
-                        <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-medium">{tag}</span>
-                      ))}
+              {outputs.map((o) => {
+                const outputUrl = typeof o.output_data?.url === 'string'
+                  ? o.output_data.url
+                  : (typeof o.output_data?.image_url === 'string' ? o.output_data.image_url : null);
+
+                return (
+                  <div key={o.id} className="bg-[hsl(var(--th-input)/0.5)] rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="secondary">{o.output_type}</Badge>
+                      {o.created_by && <span className="text-[11px] text-[hsl(var(--th-text-muted))] italic">{o.created_by}</span>}
+                      <span className="text-[11px] text-[hsl(var(--th-text-muted))]">{format(new Date(o.created_at), "MMM d, h:mm a")}</span>
                     </div>
-                  ) : o.output_type === "asset_prompt_suggestions" && Array.isArray(o.output_data.prompts) ? (
-                    <ul className="space-y-1.5 pl-1">
-                      {(o.output_data.prompts as string[]).map((p, i) => (
-                        <li key={i} className="text-xs text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
-                          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 shrink-0" />{p}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <pre className="text-xs text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap overflow-hidden">{JSON.stringify(o.output_data, null, 2)}</pre>
-                  )}
-                </div>
-              ))}
+
+                    {outputUrl ? (
+                      <div className="space-y-2">
+                        <a href={outputUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:text-cyan-300 break-all">
+                          {outputUrl}
+                        </a>
+                        <img
+                          src={outputUrl}
+                          alt={`${o.output_type} preview`}
+                          className="w-full max-w-sm rounded-md border border-[hsl(var(--th-border))] object-cover"
+                          loading="lazy"
+                        />
+                        {typeof o.output_data?.prompt === 'string' && (
+                          <details className="text-xs text-[hsl(var(--th-text-muted))]">
+                            <summary className="cursor-pointer">Show prompt</summary>
+                            <pre className="mt-2 whitespace-pre-wrap">{o.output_data.prompt}</pre>
+                          </details>
+                        )}
+                      </div>
+                    ) : o.output_type === "draft_copy" && typeof o.output_data.text === "string" ? (
+                      <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap">{o.output_data.text}</p>
+                    ) : o.output_type === "metadata" && Array.isArray(o.output_data.hashtags) ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {(o.output_data.hashtags as string[]).map((tag, i) => (
+                          <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-medium">{tag}</span>
+                        ))}
+                      </div>
+                    ) : o.output_type === "asset_prompt_suggestions" && Array.isArray(o.output_data.prompts) ? (
+                      <ul className="space-y-1.5 pl-1">
+                        {(o.output_data.prompts as string[]).map((p, i) => (
+                          <li key={i} className="text-xs text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
+                            <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 shrink-0" />{p}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <pre className="text-xs text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap overflow-hidden">{JSON.stringify(o.output_data, null, 2)}</pre>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
