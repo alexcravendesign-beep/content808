@@ -124,6 +124,39 @@ export function ItemDetailPage() {
     }
   };
 
+  const handleGenerateInfographic = async () => {
+    if (!item) return;
+    try {
+      await api.generateInfographic(item.id);
+      toast('Infographic generated', 'success');
+      fetchItem();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Infographic generation failed', 'error');
+    }
+  };
+
+  const handleGenerateHero = async () => {
+    if (!item) return;
+    try {
+      await api.generateHero(item.id);
+      toast('Hero generated', 'success');
+      fetchItem();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Hero generation failed', 'error');
+    }
+  };
+
+  const handleGenerateBoth = async () => {
+    if (!item) return;
+    try {
+      await api.generateBoth(item.id);
+      toast('Infographic + Hero generated', 'success');
+      fetchItem();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Generate both failed', 'error');
+    }
+  };
+
   if (loading) return <DetailSkeleton />;
   if (!item) return <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Item not found</div>;
 
@@ -153,6 +186,15 @@ export function ItemDetailPage() {
             )}
             <button onClick={handleSyncAssets} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-cyan-600/20 to-blue-600/20 text-cyan-300 text-xs font-medium hover:from-cyan-600/30 hover:to-blue-600/30 transition-all" title="Pull infographic/product images into outputs">
               <Package className="h-3.5 w-3.5" />Sync Product Assets
+            </button>
+            <button onClick={handleGenerateInfographic} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-emerald-600/20 to-green-600/20 text-emerald-300 text-xs font-medium hover:from-emerald-600/30 hover:to-green-600/30 transition-all" title="Generate infographic output">
+              <Sparkles className="h-3.5 w-3.5" />Generate Infographic
+            </button>
+            <button onClick={handleGenerateHero} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-fuchsia-600/20 to-pink-600/20 text-fuchsia-300 text-xs font-medium hover:from-fuchsia-600/30 hover:to-pink-600/30 transition-all" title="Generate hero output">
+              <Wrench className="h-3.5 w-3.5" />Generate Hero
+            </button>
+            <button onClick={handleGenerateBoth} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-orange-600/20 to-amber-600/20 text-amber-300 text-xs font-medium hover:from-orange-600/30 hover:to-amber-600/30 transition-all" title="Generate both infographic and hero">
+              <Zap className="h-3.5 w-3.5" />Generate Both
             </button>
             <button onClick={() => setEditOpen(true)} className="p-2 rounded-md bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
               <Edit className="h-4 w-4" />

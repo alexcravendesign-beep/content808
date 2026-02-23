@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import Jimp from 'jimp';
 import { supabase } from '../db/connection';
 import { body, param, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
@@ -446,7 +447,7 @@ async function syncAssetsForItem(itemId: string, actorId: string, actorRole: Use
     outputsToCreate.push({
       output_type: 'infographic_image',
       output_data: {
-        url: product.infographic_url,
+        url: normalizePublicUrl(product.infographic_url),
         prompt: product.infographic_prompt || null,
         product_name: product.name,
       },
@@ -458,7 +459,7 @@ async function syncAssetsForItem(itemId: string, actorId: string, actorRole: Use
     outputsToCreate.push({
       output_type: 'product_image',
       output_data: {
-        url: firstImage,
+        url: normalizePublicUrl(firstImage),
         product_name: product.name,
       },
     });
@@ -497,6 +498,155 @@ router.post('/items/:id/sync-product-assets', [param('id').isUUID()], async (req
   }
 });
 
+async function getItemAndProduct(itemId: string) {
+  const { data: item, error: itemErr } = await supabase
+    .from('content_items')
+    .select('*')
+    .eq('id', itemId)
+    .maybeSingle();
+  if (itemErr) throw new Error(itemErr.message);
+  if (!item) throw new Error('Item not found');
+
+  const productTitle = item.product_title || '';
+  const { data: products, error: productErr } = await supabase
+    .from('products')
+    .select('id,name,images,infographic_url,infographic_prompt,brand')
+    .or(`name.ilike.%${productTitle}%,brand.ilike.%${item.brand || ''}%`)
+    .limit(1);
+  if (productErr) throw new Error(productErr.message);
+  const product = products?.[0];
+  if (!product) throw new Error('No matching product found');
+
+  return { item, product };
+}
+
+function normalizePublicUrl(url: string) {
+  return String(url)
+    .replace('http://localhost:8000', 'https://supabase.cravencooling.services')
+    .replace('http://host.docker.internal:8000', 'https://supabase.cravencooling.services');
+}
+
+async function createOutput(contentItemId: string, output_type: string, output_data: Record<string, unknown>) {
+  const { error } = await supabase.from('content_item_outputs').insert({
+    id: uuidv4(),
+    content_item_id: contentItemId,
+    output_type,
+    output_data,
+  });
+  if (error) throw new Error(error.message);
+}
+
+async function generateHeroImage(itemId: string, productName: string, productImageUrl: string) {
+  const templateUrl = process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
+
+  let sourceUrl = productImageUrl;
+  if (/\.webp(\?|$)/i.test(sourceUrl)) {
+    sourceUrl = `https://wsrv.nl/?url=${encodeURIComponent(sourceUrl)}&output=jpg`;
+  }
+
+  const [tplRes, prodRes] = await Promise.all([fetch(templateUrl), fetch(sourceUrl)]);
+  if (!tplRes.ok || !prodRes.ok) throw new Error('Failed to fetch template or product image');
+
+  const [tplBuf, prodBuf] = await Promise.all([tplRes.arrayBuffer(), prodRes.arrayBuffer()]);
+  const canvas = await Jimp.read(Buffer.from(tplBuf));
+  const product = await Jimp.read(Buffer.from(prodBuf));
+
+  // force story size
+  canvas.resize(1080, 1920);
+
+  // product in lower half
+  product.contain(900, 760);
+  const px = Math.floor((1080 - product.bitmap.width) / 2);
+  const py = 860;
+  canvas.composite(product, px, py);
+
+  // subtle dark bar for text readability
+  const bar = await new Jimp(1080, 180, 0x00000088);
+  canvas.composite(bar, 0, 1680);
+
+  const font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
+  canvas.print(font, 40, 1710, {
+    text: productName,
+    alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER,
+    alignmentY: Jimp.VERTICAL_ALIGN_TOP,
+  }, 1000, 120);
+
+  const out = await canvas.getBufferAsync(Jimp.MIME_PNG);
+  const filename = `heroes/content_item_${itemId}_${Date.now()}.png`;
+  const { error: upErr } = await supabase.storage.from('mock-facebook-images').upload(filename, out, {
+    contentType: 'image/png', upsert: true,
+  });
+  if (upErr) throw new Error(upErr.message);
+  const { data } = supabase.storage.from('mock-facebook-images').getPublicUrl(filename);
+  return data.publicUrl
+    .replace('http://localhost:8000', 'https://supabase.cravencooling.services')
+    .replace('http://host.docker.internal:8000', 'https://supabase.cravencooling.services');
+}
+
+router.post('/items/:id/generate-infographic', [param('id').isUUID()], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const { item, product } = await getItemAndProduct(req.params.id);
+    if (!product.infographic_url) return res.status(422).json({ error: 'Product has no infographic_url yet' });
+
+    await createOutput(item.id, 'infographic_image', {
+      url: normalizePublicUrl(product.infographic_url),
+      prompt: product.infographic_prompt || null,
+      product_name: product.name,
+      mode: 'infographic',
+      status: 'completed',
+    });
+
+    return res.json({ ok: true, mode: 'infographic', url: normalizePublicUrl(product.infographic_url), product_name: product.name });
+  } catch (err) {
+    console.error('generate-infographic failed', err);
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'generate-infographic failed' });
+  }
+});
+
+router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const { item, product } = await getItemAndProduct(req.params.id);
+    const productImage = Array.isArray(product.images) && product.images.length
+      ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
+      : null;
+    if (!productImage) return res.status(422).json({ error: 'Product has no source image' });
+
+    const heroPrompt = `Create Fridgesmart story hero using provided template + product image. Keep logo area untouched. Place product in lower half with name at bottom: ${product.name}`;
+    const heroUrl = await generateHeroImage(item.id, product.name, productImage);
+
+    await createOutput(item.id, 'hero_image', {
+      url: heroUrl,
+      prompt: heroPrompt,
+      product_name: product.name,
+      mode: 'hero',
+      status: 'completed',
+    });
+
+    return res.json({ ok: true, mode: 'hero', url: heroUrl, product_name: product.name });
+  } catch (err) {
+    console.error('generate-hero failed', err);
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'generate-hero failed' });
+  }
+});
+
+router.post('/items/:id/generate-both', [param('id').isUUID()], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const inf = await fetch(`http://localhost:${process.env.PORT || 4000}/api/v1/content-hub/items/${req.params.id}/generate-infographic`, {
+      method: 'POST', headers: { 'x-user-id': req.user!.id, 'x-user-name': req.user!.name, 'x-user-role': req.user!.role },
+    });
+    const hero = await fetch(`http://localhost:${process.env.PORT || 4000}/api/v1/content-hub/items/${req.params.id}/generate-hero`, {
+      method: 'POST', headers: { 'x-user-id': req.user!.id, 'x-user-name': req.user!.name, 'x-user-role': req.user!.role },
+    });
+    return res.json({ ok: inf.ok && hero.ok, infographic: await inf.json(), hero: await hero.json() });
+  } catch (err) {
+    console.error('generate-both failed', err);
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'generate-both failed' });
+  }
+});
+
 router.post('/items/sync-product-assets-batch', [body('item_ids').isArray({ min: 1 })], async (req: Request, res: Response) => {
   if (!handleValidation(req, res)) return;
   try {
@@ -518,6 +668,78 @@ router.post('/items/sync-product-assets-batch', [body('item_ids').isArray({ min:
   } catch (err) {
     console.error('Error batch syncing product assets:', err);
     res.status(500).json({ error: 'Failed to batch sync product assets' });
+  }
+});
+
+router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body('mode').isIn(['infographic', 'hero', 'both'])], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const ids = (req.body.item_ids as string[]).slice(0, 100);
+    const mode = req.body.mode as 'infographic' | 'hero' | 'both';
+    const results: Array<{ item_id: string; ok: boolean; error?: string }> = [];
+
+    for (const id of ids) {
+      try {
+        if (mode === 'infographic') {
+          const { item, product } = await getItemAndProduct(id);
+          if (!product.infographic_url) throw new Error('Product has no infographic_url yet');
+          await createOutput(item.id, 'infographic_image', {
+            url: normalizePublicUrl(product.infographic_url),
+            prompt: product.infographic_prompt || null,
+            product_name: product.name,
+            mode: 'infographic',
+            status: 'completed',
+          });
+        } else if (mode === 'hero') {
+          const { item, product } = await getItemAndProduct(id);
+          const img = Array.isArray(product.images) && product.images.length
+            ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
+            : null;
+          if (!img) throw new Error('Product has no source image');
+          const heroUrl = await generateHeroImage(item.id, product.name, img);
+          await createOutput(item.id, 'hero_image', {
+            url: heroUrl,
+            prompt: `Hero image for ${product.name}`,
+            product_name: product.name,
+            mode: 'hero',
+            status: 'completed',
+          });
+        } else {
+          const { item, product } = await getItemAndProduct(id);
+          if (product.infographic_url) {
+            await createOutput(item.id, 'infographic_image', {
+              url: normalizePublicUrl(product.infographic_url),
+              prompt: product.infographic_prompt || null,
+              product_name: product.name,
+              mode: 'infographic',
+              status: 'completed',
+            });
+          }
+          const img = Array.isArray(product.images) && product.images.length
+            ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
+            : null;
+          if (img) {
+            const heroUrl = await generateHeroImage(item.id, product.name, img);
+            await createOutput(item.id, 'hero_image', {
+              url: heroUrl,
+              prompt: `Hero image for ${product.name}`,
+              product_name: product.name,
+              mode: 'hero',
+              status: 'completed',
+            });
+          }
+        }
+        results.push({ item_id: id, ok: true });
+      } catch (e) {
+        results.push({ item_id: id, ok: false, error: e instanceof Error ? e.message : 'unknown_error' });
+      }
+    }
+
+    const okCount = results.filter(r => r.ok).length;
+    res.json({ ok: true, processed: results.length, okCount, results });
+  } catch (err) {
+    console.error('Error generate-batch:', err);
+    res.status(500).json({ error: 'Failed to run generate batch' });
   }
 });
 
