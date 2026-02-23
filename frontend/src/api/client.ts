@@ -77,6 +77,7 @@ export const api = {
 
   agentFill: (id: string) => request<{ jobId: string }>(`/items/${id}/agent-fill`, { method: 'POST' }),
   syncProductAssets: (id: string) => request<{ ok: boolean; created: number; product_name: string }>(`/items/${id}/sync-product-assets`, { method: 'POST' }),
+  syncProductAssetsBatch: (item_ids: string[]) => request<{ ok: boolean; processed: number; okCount: number; createdTotal: number }>(`/items/sync-product-assets-batch`, { method: 'POST', body: { item_ids } }),
 };
 
 export interface ContentItem {

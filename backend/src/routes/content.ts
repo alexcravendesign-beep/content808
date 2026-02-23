@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { logAudit, getAuditLog } from '../services/audit';
 import { canTransition, getValidTransitions, getAllStatuses } from '../services/transitions';
 import { requireRole } from '../middleware/auth';
-import { ContentStatus } from '../types';
+import { ContentStatus, UserRole } from '../types';
 
 const router = Router();
 
@@ -422,78 +422,104 @@ router.get('/stats', async (_req: Request, res: Response) => {
 });
 
 // ── Agent Fill ──
-router.post(
-  '/items/:id/sync-product-assets',
-  [param('id').isUUID()],
-  async (req: Request, res: Response) => {
-    if (!handleValidation(req, res)) return;
-    try {
-      const { data: item, error: itemErr } = await supabase
-        .from('content_items')
-        .select('*')
-        .eq('id', req.params.id)
-        .maybeSingle();
-      if (itemErr) throw new Error(itemErr.message);
-      if (!item) return res.status(404).json({ error: 'Item not found' });
-      if (!item.product_title) return res.status(400).json({ error: 'Item has no product_title' });
+async function syncAssetsForItem(itemId: string, actorId: string, actorRole: UserRole = 'admin') {
+  const { data: item, error: itemErr } = await supabase
+    .from('content_items')
+    .select('*')
+    .eq('id', itemId)
+    .maybeSingle();
+  if (itemErr) throw new Error(itemErr.message);
+  if (!item) return { ok: false, error: 'Item not found', created: 0 };
+  if (!item.product_title) return { ok: false, error: 'Item has no product_title', created: 0 };
 
-      const { data: products, error: productErr } = await supabase
-        .from('products')
-        .select('id,name,images,infographic_url,infographic_prompt')
-        .ilike('name', `%${item.product_title}%`)
-        .limit(1);
-      if (productErr) throw new Error(productErr.message);
-      const product = products?.[0];
-      if (!product) return res.status(404).json({ error: 'No matching product found' });
+  const { data: products, error: productErr } = await supabase
+    .from('products')
+    .select('id,name,images,infographic_url,infographic_prompt')
+    .ilike('name', `%${item.product_title}%`)
+    .limit(1);
+  if (productErr) throw new Error(productErr.message);
+  const product = products?.[0];
+  if (!product) return { ok: false, error: 'No matching product found', created: 0 };
 
-      const outputsToCreate: Array<{ output_type: string; output_data: Record<string, unknown> }> = [];
-      if (product.infographic_url) {
-        outputsToCreate.push({
-          output_type: 'infographic_image',
-          output_data: {
-            url: product.infographic_url,
-            prompt: product.infographic_prompt || null,
-            product_name: product.name,
-          },
-        });
-      }
-
-      const firstImage = Array.isArray(product.images) && product.images.length ? product.images[0] : null;
-      if (firstImage) {
-        outputsToCreate.push({
-          output_type: 'product_image',
-          output_data: {
-            url: firstImage,
-            product_name: product.name,
-          },
-        });
-      }
-
-      for (const out of outputsToCreate) {
-        await supabase.from('content_item_outputs').insert({
-          id: uuidv4(),
-          content_item_id: item.id,
-          output_type: out.output_type,
-          output_data: out.output_data,
-        });
-      }
-
-      await logAudit({
-        entityType: 'content_item',
-        entityId: item.id,
-        action: 'update',
-        actor: req.user!.id,
-        actorRole: req.user!.role,
-        details: { synced_outputs: outputsToCreate.map(o => o.output_type), product_name: product.name },
-      });
-
-      res.json({ ok: true, created: outputsToCreate.length, product_name: product.name });
-    } catch (err) {
-      console.error('Error syncing product assets:', err);
-      res.status(500).json({ error: 'Failed to sync product assets' });
-    }
+  const outputsToCreate: Array<{ output_type: string; output_data: Record<string, unknown> }> = [];
+  if (product.infographic_url) {
+    outputsToCreate.push({
+      output_type: 'infographic_image',
+      output_data: {
+        url: product.infographic_url,
+        prompt: product.infographic_prompt || null,
+        product_name: product.name,
+      },
+    });
   }
-);
+
+  const firstImage = Array.isArray(product.images) && product.images.length ? product.images[0] : null;
+  if (firstImage) {
+    outputsToCreate.push({
+      output_type: 'product_image',
+      output_data: {
+        url: firstImage,
+        product_name: product.name,
+      },
+    });
+  }
+
+  for (const out of outputsToCreate) {
+    await supabase.from('content_item_outputs').insert({
+      id: uuidv4(),
+      content_item_id: item.id,
+      output_type: out.output_type,
+      output_data: out.output_data,
+    });
+  }
+
+  await logAudit({
+    entityType: 'content_item',
+    entityId: item.id,
+    action: 'update',
+    actor: actorId,
+    actorRole,
+    details: { synced_outputs: outputsToCreate.map(o => o.output_type), product_name: product.name },
+  });
+
+  return { ok: true, created: outputsToCreate.length, product_name: product.name };
+}
+
+router.post('/items/:id/sync-product-assets', [param('id').isUUID()], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const result = await syncAssetsForItem(req.params.id, req.user!.id, req.user!.role);
+    if (!result.ok) return res.status(404).json(result);
+    res.json(result);
+  } catch (err) {
+    console.error('Error syncing product assets:', err);
+    res.status(500).json({ error: 'Failed to sync product assets' });
+  }
+});
+
+router.post('/items/sync-product-assets-batch', [body('item_ids').isArray({ min: 1 })], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const ids = (req.body.item_ids as string[]).slice(0, 200);
+    const results = [] as Array<{ item_id: string; ok: boolean; created: number; error?: string; product_name?: string }>;
+
+    for (const id of ids) {
+      try {
+        const r = await syncAssetsForItem(id, req.user!.id, req.user!.role);
+        results.push({ item_id: id, ...r });
+      } catch (e) {
+        results.push({ item_id: id, ok: false, created: 0, error: e instanceof Error ? e.message : 'unknown_error' });
+      }
+    }
+
+    const okCount = results.filter(r => r.ok).length;
+    const createdTotal = results.reduce((n, r) => n + (r.created || 0), 0);
+    res.json({ ok: true, processed: results.length, okCount, createdTotal, results });
+  } catch (err) {
+    console.error('Error batch syncing product assets:', err);
+    res.status(500).json({ error: 'Failed to batch sync product assets' });
+  }
+});
 
 router.post(
   '/items/:id/agent-fill',
