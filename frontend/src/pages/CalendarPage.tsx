@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ContentItem } from "@/api/client";
 import { useToast } from "@/components/ui/toast";
 import { ItemFormModal } from "@/components/ItemFormModal";
@@ -28,12 +29,25 @@ const VIEW_CONFIG: { id: ViewMode; label: string; icon: React.ElementType }[] = 
   { id: "agenda", label: "Agenda", icon: List },
 ];
 
+function parseMonthParam(v: string | null): Date | null {
+  if (!v) return null;
+  const m = v.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+  return new Date(year, month - 1, 1);
+}
+
 export function CalendarPage() {
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<ViewMode>("month");
+  const initialDate = parseMonthParam(searchParams.get('month')) || new Date();
+  const initialView = (searchParams.get('view') as ViewMode) || 'month';
+  const [currentDate, setCurrentDate] = useState(initialDate);
+  const [view, setView] = useState<ViewMode>(["month", "week", "day", "agenda"].includes(initialView) ? initialView : "month");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dragItem, setDragItem] = useState<ContentItem | null>(null);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
@@ -91,6 +105,25 @@ export function CalendarPage() {
   }, [currentDate, view, filters, toast]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
+
+  // Keep URL shareable: /calendar?month=YYYY-MM&view=...
+  useEffect(() => {
+    const month = format(currentDate, 'yyyy-MM');
+    const next = new URLSearchParams(searchParams);
+    next.set('month', month);
+    next.set('view', view);
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [currentDate, view]);
+
+  // Handle back/forward URL changes
+  useEffect(() => {
+    const m = parseMonthParam(searchParams.get('month'));
+    const v = searchParams.get('view');
+    if (m && format(m, 'yyyy-MM') !== format(currentDate, 'yyyy-MM')) setCurrentDate(m);
+    if (v && ["month", "week", "day", "agenda"].includes(v) && v !== view) setView(v as ViewMode);
+  }, [searchParams]);
 
   // Navigation
   const navigateDate = (dir: number) => {
