@@ -210,8 +210,13 @@ export function CalendarPage() {
   const handleGenerateVisible = async (mode: 'infographic'|'hero'|'both') => {
     try {
       const ids = items.map((i) => i.id);
+      const maxBatch = 8;
       if (!ids.length) {
         toast('No visible items to generate', 'error');
+        return;
+      }
+      if (ids.length > maxBatch) {
+        toast(`Batch blocked: ${ids.length} visible items. Max is ${maxBatch}. Narrow filters/date range.`, 'error');
         return;
       }
       if (batchState.running) {

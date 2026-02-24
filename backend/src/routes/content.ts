@@ -833,7 +833,15 @@ router.post('/items/sync-product-assets-batch', [body('item_ids').isArray({ min:
 router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body('mode').isIn(['infographic', 'hero', 'both'])], async (req: Request, res: Response) => {
   if (!handleValidation(req, res)) return;
   try {
-    const ids = (req.body.item_ids as string[]).slice(0, 100);
+    const incomingIds = req.body.item_ids as string[];
+    const maxBatch = Number(process.env.CONTENT808_MAX_BATCH_GENERATE || 8);
+    if (incomingIds.length > maxBatch) {
+      return res.status(422).json({
+        error: `Batch too large (${incomingIds.length}). Max allowed is ${maxBatch}. Narrow filters/date range and retry.`,
+      });
+    }
+
+    const ids = incomingIds.slice(0, maxBatch);
     const mode = req.body.mode as 'infographic' | 'hero' | 'both';
     const results: Array<{ item_id: string; ok: boolean; error?: string }> = [];
 
