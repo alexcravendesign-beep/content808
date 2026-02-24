@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import Jimp from 'jimp';
+import { Buffer } from 'node:buffer';
 import { supabase } from '../db/connection';
 import { body, param, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
@@ -627,7 +627,20 @@ OUTPUT STYLE: Modern corporate infographic, flat design aesthetic, professional 
 }
 
 function buildHeroPrompt(productName: string) {
-  return `Create a branded Fridgesmart story hero image (1080x1920, 9:16). Inputs: First image is the Fridgesmart branded background template. Second image is the product photo/cutout. Rules: Preserve the background and logo exactly. Place product in the lower half, centered horizontally. Keep product large and clear with natural shadow grounding. Add product name text at the bottom center. Product name text must be bold, white, highly legible. Add subtle dark gradient behind bottom text for readability. Keep a clean premium look, no extra icons, no data boxes, no clutter. Do NOT crop the logo area at top. Do NOT alter brand colors. Bottom text: ${productName}`;
+  return `Create a premium Fridgesmart product hero image for social story format (1080x1920, 9:16).
+
+Use the first image as the locked Fridgesmart brand background template.
+Use the second image as the product.
+
+Rules:
+- Keep the brand template style, colors, and logo area intact.
+- Place the product prominently in the lower-middle area with realistic grounding/shadow.
+- Add headline text at the bottom center: "${productName}"
+- Typography: bold, clean, high contrast, premium retail style.
+- Keep layout minimal and modern.
+- No clutter, no random icons, no extra badges, no fake UI.
+- Do not alter brand identity.
+- Output must look like polished campaign creative.`;
 }
 
 async function createOutput(contentItemId: string, output_type: string, output_data: Record<string, unknown>) {
@@ -640,101 +653,140 @@ async function createOutput(contentItemId: string, output_type: string, output_d
   if (error) throw new Error(error.message);
 }
 
-async function generateHeroImage(itemId: string, productName: string, productImageUrl: string) {
-  const templateUrl = process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
+async function urlToInlineData(url: string): Promise<{ mimeType: string; data: string }> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch input image: ${url}`);
+  const ab = await res.arrayBuffer();
+  const contentType = res.headers.get('content-type') || 'image/png';
+  return { mimeType: contentType.split(';')[0], data: Buffer.from(ab).toString('base64') };
+}
 
-  let sourceUrl = productImageUrl;
-  if (/\.webp(\?|$)/i.test(sourceUrl)) {
-    sourceUrl = `https://wsrv.nl/?url=${encodeURIComponent(sourceUrl)}&output=jpg`;
+async function generateWithNanoBanana(prompt: string, imageUrls: string[]) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
+
+  const model = process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview';
+  const parts: any[] = [];
+  for (const u of imageUrls.filter(Boolean)) {
+    const inline = await urlToInlineData(u);
+    parts.push({ inlineData: inline });
+  }
+  parts.push({ text: prompt });
+
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts }],
+      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+    }),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Nano Banana API error (${res.status}): ${txt.slice(0, 400)}`);
   }
 
-  const [tplRes, prodRes] = await Promise.all([fetch(templateUrl), fetch(sourceUrl)]);
-  if (!tplRes.ok || !prodRes.ok) throw new Error('Failed to fetch template or product image');
+  const json: any = await res.json();
+  const outPart = json?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData?.data);
+  if (!outPart?.inlineData?.data) throw new Error('Nano Banana returned no image');
 
-  const [tplBuf, prodBuf] = await Promise.all([tplRes.arrayBuffer(), prodRes.arrayBuffer()]);
-  const canvas = await Jimp.read(Buffer.from(tplBuf));
-  const product = await Jimp.read(Buffer.from(prodBuf));
+  return Buffer.from(outPart.inlineData.data, 'base64');
+}
 
-  // force story size
-  canvas.resize(1080, 1920);
-
-  // product in lower half
-  product.contain(900, 760);
-  const px = Math.floor((1080 - product.bitmap.width) / 2);
-  const py = 860;
-  canvas.composite(product, px, py);
-
-  // subtle dark bar for text readability
-  const bar = await new Jimp(1080, 180, 0x00000088);
-  canvas.composite(bar, 0, 1680);
-
-  const font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
-  canvas.print(font, 40, 1710, {
-    text: productName,
-    alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER,
-    alignmentY: Jimp.VERTICAL_ALIGN_TOP,
-  }, 1000, 120);
-
-  const out = await canvas.getBufferAsync(Jimp.MIME_PNG);
-  const filename = `heroes/content_item_${itemId}_${Date.now()}.png`;
-  const { error: upErr } = await supabase.storage.from('mock-facebook-images').upload(filename, out, {
+async function uploadGeneratedImage(path: string, buffer: Buffer) {
+  const { error: upErr } = await supabase.storage.from('mock-facebook-images').upload(path, buffer, {
     contentType: 'image/png', upsert: true,
   });
   if (upErr) throw new Error(upErr.message);
-  const { data } = supabase.storage.from('mock-facebook-images').getPublicUrl(filename);
-  return data.publicUrl
-    .replace('http://localhost:8000', 'https://supabase.cravencooling.services')
-    .replace('http://host.docker.internal:8000', 'https://supabase.cravencooling.services');
+  const { data } = supabase.storage.from('mock-facebook-images').getPublicUrl(path);
+  return normalizePublicUrl(data.publicUrl);
+}
+
+async function generateHeroImage(itemId: string, productName: string, productImageUrl: string) {
+  const templateUrl = process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
+  const prompt = buildHeroPrompt(productName);
+  const image = await generateWithNanoBanana(prompt, [templateUrl, productImageUrl]);
+  const url = await uploadGeneratedImage(`heroes/content_item_${itemId}_${Date.now()}.png`, image);
+  return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
+}
+
+async function generateInfographicImage(itemId: string, product: any) {
+  const templateUrl = process.env.INFOGRAPHIC_TEMPLATE_URL || process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
+  const prompt = buildInfographicPrompt(product as Record<string, unknown>);
+  const image = await generateWithNanoBanana(prompt, [templateUrl]);
+  const safe = String(product.name || 'product').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60);
+  const url = await uploadGeneratedImage(`infographics/${safe}_${itemId}_${Date.now()}.png`, image);
+  return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
 }
 
 router.post('/items/:id/generate-infographic', [param('id').isUUID()], async (req: Request, res: Response) => {
   if (!handleValidation(req, res)) return;
+  let itemId = req.params.id;
+  let productName = '';
+  let prompt = '';
   try {
     const { item, product } = await getItemAndProduct(req.params.id);
-    if (!product.infographic_url) return res.status(422).json({ error: 'Product has no infographic_url yet' });
+    itemId = item.id;
+    productName = product.name;
 
-    const prompt = buildInfographicPrompt(product as Record<string, unknown>);
-    if (!prompt.trim()) return res.status(422).json({ error: 'Infographic prompt is empty' });
+    const out = await generateInfographicImage(item.id, product);
+    prompt = out.prompt;
 
     await createOutput(item.id, 'infographic_image', {
-      url: normalizePublicUrl(product.infographic_url),
-      prompt,
+      url: out.url,
+      prompt: out.prompt,
+      model: out.model,
       product_name: product.name,
       mode: 'infographic',
       status: 'completed',
     });
 
-    return res.json({ ok: true, mode: 'infographic', url: normalizePublicUrl(product.infographic_url), product_name: product.name, prompt });
+    return res.json({ ok: true, mode: 'infographic', url: out.url, product_name: product.name, prompt: out.prompt, model: out.model });
   } catch (err) {
+    const error = err instanceof Error ? err.message : 'generate-infographic failed';
+    try {
+      await createOutput(itemId, 'infographic_image', { prompt, product_name: productName, mode: 'infographic', status: 'failed', error });
+    } catch {}
     console.error('generate-infographic failed', err);
-    return res.status(500).json({ error: err instanceof Error ? err.message : 'generate-infographic failed' });
+    return res.status(500).json({ error });
   }
 });
 
 router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Request, res: Response) => {
   if (!handleValidation(req, res)) return;
+  let itemId = req.params.id;
+  let productName = '';
+  let prompt = '';
   try {
     const { item, product } = await getItemAndProduct(req.params.id);
+    itemId = item.id;
+    productName = product.name;
     const productImage = Array.isArray(product.images) && product.images.length
       ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
       : null;
     if (!productImage) return res.status(422).json({ error: 'Product has no source image' });
 
-    const heroPrompt = buildHeroPrompt(product.name);
-    const heroUrl = await generateHeroImage(item.id, product.name, productImage);
+    const hero = await generateHeroImage(item.id, product.name, productImage);
+    prompt = hero.prompt;
 
     await createOutput(item.id, 'hero_image', {
-      url: heroUrl,
-      prompt: heroPrompt,
+      url: hero.url,
+      prompt: hero.prompt,
+      model: hero.model,
       product_name: product.name,
       mode: 'hero',
       status: 'completed',
     });
 
-    return res.json({ ok: true, mode: 'hero', url: heroUrl, product_name: product.name });
+    return res.json({ ok: true, mode: 'hero', url: hero.url, product_name: product.name, prompt: hero.prompt, model: hero.model });
   } catch (err) {
+    const error = err instanceof Error ? err.message : 'generate-hero failed';
+    try {
+      await createOutput(itemId, 'hero_image', { prompt, product_name: productName, mode: 'hero', status: 'failed', error });
+    } catch {}
     console.error('generate-hero failed', err);
-    return res.status(500).json({ error: err instanceof Error ? err.message : 'generate-hero failed' });
+    return res.status(500).json({ error });
   }
 });
 
@@ -789,10 +841,11 @@ router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body
       try {
         if (mode === 'infographic') {
           const { item, product } = await getItemAndProduct(id);
-          if (!product.infographic_url) throw new Error('Product has no infographic_url yet');
+          const inf = await generateInfographicImage(item.id, product);
           await createOutput(item.id, 'infographic_image', {
-            url: normalizePublicUrl(product.infographic_url),
-            prompt: buildInfographicPrompt(product as Record<string, unknown>),
+            url: inf.url,
+            prompt: inf.prompt,
+            model: inf.model,
             product_name: product.name,
             mode: 'infographic',
             status: 'completed',
@@ -803,42 +856,52 @@ router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body
             ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
             : null;
           if (!img) throw new Error('Product has no source image');
-          const heroUrl = await generateHeroImage(item.id, product.name, img);
+          const hero = await generateHeroImage(item.id, product.name, img);
           await createOutput(item.id, 'hero_image', {
-            url: heroUrl,
-            prompt: buildHeroPrompt(product.name),
+            url: hero.url,
+            prompt: hero.prompt,
+            model: hero.model,
             product_name: product.name,
             mode: 'hero',
             status: 'completed',
           });
         } else {
           const { item, product } = await getItemAndProduct(id);
-          if (product.infographic_url) {
-            await createOutput(item.id, 'infographic_image', {
-              url: normalizePublicUrl(product.infographic_url),
-              prompt: buildInfographicPrompt(product as Record<string, unknown>),
-              product_name: product.name,
-              mode: 'infographic',
-              status: 'completed',
-            });
-          }
+          const inf = await generateInfographicImage(item.id, product);
+          await createOutput(item.id, 'infographic_image', {
+            url: inf.url,
+            prompt: inf.prompt,
+            model: inf.model,
+            product_name: product.name,
+            mode: 'infographic',
+            status: 'completed',
+          });
           const img = Array.isArray(product.images) && product.images.length
             ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
             : null;
-          if (img) {
-            const heroUrl = await generateHeroImage(item.id, product.name, img);
-            await createOutput(item.id, 'hero_image', {
-              url: heroUrl,
-              prompt: buildHeroPrompt(product.name),
-              product_name: product.name,
-              mode: 'hero',
-              status: 'completed',
-            });
-          }
+          if (!img) throw new Error('Product has no source image');
+          const hero = await generateHeroImage(item.id, product.name, img);
+          await createOutput(item.id, 'hero_image', {
+            url: hero.url,
+            prompt: hero.prompt,
+            model: hero.model,
+            product_name: product.name,
+            mode: 'hero',
+            status: 'completed',
+          });
         }
         results.push({ item_id: id, ok: true });
       } catch (e) {
-        results.push({ item_id: id, ok: false, error: e instanceof Error ? e.message : 'unknown_error' });
+        const error = e instanceof Error ? e.message : 'unknown_error';
+        try {
+          if (mode === 'hero' || mode === 'both') {
+            await createOutput(id, 'hero_image', { mode: 'hero', status: 'failed', error });
+          }
+          if (mode === 'infographic' || mode === 'both') {
+            await createOutput(id, 'infographic_image', { mode: 'infographic', status: 'failed', error });
+          }
+        } catch {}
+        results.push({ item_id: id, ok: false, error });
       }
     }
 
