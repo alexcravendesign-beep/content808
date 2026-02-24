@@ -76,7 +76,7 @@ router.get('/items', async (req: Request, res: Response) => {
 
     const items = data || [];
     const ids = items.map((i: any) => i.id).filter(Boolean);
-    let flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean }> = {};
+    let flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean; has_facebook_approved: boolean; approved_facebook_posts: number }> = {};
 
     if (ids.length) {
       const { data: outputs, error: outErr } = await supabase
@@ -87,15 +87,43 @@ router.get('/items', async (req: Request, res: Response) => {
         .order('created_at', { ascending: false });
       if (outErr) throw new Error(outErr.message);
 
-      for (const id of ids) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false };
+      for (const id of ids) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
 
       for (const o of outputs || []) {
         const id = (o as any).content_item_id as string;
-        if (!flagsById[id]) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false };
+        if (!flagsById[id]) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
         const status = (o as any).output_data?.status || 'completed';
         if (status !== 'completed') continue;
         if ((o as any).output_type === 'hero_image') flagsById[id].has_hero = true;
         if ((o as any).output_type === 'infographic_image') flagsById[id].has_infographic = true;
+      }
+
+      const itemToProduct = new Map<string, string>();
+      for (const it of items) {
+        if ((it as any).id && (it as any).product_id) itemToProduct.set((it as any).id, (it as any).product_id);
+      }
+
+      const productIds = Array.from(new Set(Array.from(itemToProduct.values())));
+      if (productIds.length) {
+        const { data: fbRows, error: fbErr } = await supabase
+          .from('mock_facebook_posts')
+          .select('product_id')
+          .in('product_id', productIds)
+          .eq('approval_status', 'approved');
+        if (fbErr) throw new Error(fbErr.message);
+
+        const approvedByProduct = new Map<string, number>();
+        for (const row of fbRows || []) {
+          const pid = (row as any).product_id as string;
+          approvedByProduct.set(pid, (approvedByProduct.get(pid) || 0) + 1);
+        }
+
+        for (const [itemId, productId] of itemToProduct.entries()) {
+          const c = approvedByProduct.get(productId) || 0;
+          if (!flagsById[itemId]) flagsById[itemId] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
+          flagsById[itemId].approved_facebook_posts = c;
+          flagsById[itemId].has_facebook_approved = c > 0;
+        }
       }
 
       for (const id of Object.keys(flagsById)) {
@@ -103,7 +131,7 @@ router.get('/items', async (req: Request, res: Response) => {
       }
     }
 
-    const enriched = items.map((i: any) => ({ ...i, ...(flagsById[i.id] || { has_hero: false, has_infographic: false, creative_done: false }) }));
+    const enriched = items.map((i: any) => ({ ...i, ...(flagsById[i.id] || { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 }) }));
 
     res.json({ items: enriched, total, limit: pageLimit, offset: pageOffset });
   } catch (err) {

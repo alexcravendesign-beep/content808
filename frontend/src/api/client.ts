@@ -110,6 +110,8 @@ export interface ContentItem {
   has_hero?: boolean;
   has_infographic?: boolean;
   creative_done?: boolean;
+  has_facebook_approved?: boolean;
+  approved_facebook_posts?: number;
 }
 
 export interface ContentComment {

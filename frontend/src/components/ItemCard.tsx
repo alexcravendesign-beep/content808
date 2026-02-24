@@ -48,6 +48,10 @@ export function ItemCard({ item, onClick, compact }: ItemCardProps) {
         {item.creative_done && (
           <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-cyan-500/20 text-cyan-300">DONE</span>
         )}
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${item.has_facebook_approved ? 'bg-emerald-500/20 text-emerald-300' : 'bg-zinc-700/40 text-zinc-400'}`}>
+          F {item.has_facebook_approved ? '✓' : '·'}
+          {item.approved_facebook_posts ? ` ${item.approved_facebook_posts}` : ''}
+        </span>
         {item.assignee && (
           <span className="flex items-center gap-1">
             <User className="h-3 w-3" />
