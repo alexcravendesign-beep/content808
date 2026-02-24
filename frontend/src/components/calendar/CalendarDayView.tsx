@@ -125,6 +125,7 @@ export function CalendarDayView({ currentDate, items, onItemClick, onSlotClick }
                                                     <StatusBadge status={item.status} size="sm" />
                                                     <span className={`h-2 w-2 rounded-full ${item.has_hero ? 'bg-fuchsia-400' : 'bg-zinc-600'}`} title={item.has_hero ? 'Hero done' : 'Hero missing'} />
                                                     <span className={`h-2 w-2 rounded-full ${item.has_infographic ? 'bg-emerald-400' : 'bg-zinc-600'}`} title={item.has_infographic ? 'Infographic done' : 'Infographic missing'} />
+                                                    <span className={`h-2 w-2 rounded-full ${item.has_facebook_approved ? 'bg-green-400' : 'bg-zinc-600'}`} title={item.has_facebook_approved ? `Facebook approved (${item.approved_facebook_posts || 0})` : 'No approved Facebook posts'} />
                                                 </div>
                                                 <div className="flex items-center gap-3 mt-0.5 text-[10px] text-[hsl(var(--th-text-muted))]">
                                                     <span>{item.brand}</span>

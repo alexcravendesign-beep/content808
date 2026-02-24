@@ -86,6 +86,7 @@ export function CalendarWeekGrid({
                                         {item.platform && <span className="text-[hsl(var(--th-text-muted))]">· {item.platform}</span>}
                                         <span className={`h-2 w-2 rounded-full ${item.has_hero ? 'bg-fuchsia-400' : 'bg-zinc-600'}`} title={item.has_hero ? 'Hero done' : 'Hero missing'} />
                                         <span className={`h-2 w-2 rounded-full ${item.has_infographic ? 'bg-emerald-400' : 'bg-zinc-600'}`} title={item.has_infographic ? 'Infographic done' : 'Infographic missing'} />
+                                        <span className={`h-2 w-2 rounded-full ${item.has_facebook_approved ? 'bg-green-400' : 'bg-zinc-600'}`} title={item.has_facebook_approved ? `Facebook approved (${item.approved_facebook_posts || 0})` : 'No approved Facebook posts'} />
                                     </div>
                                 </div>
                             ))}

@@ -92,7 +92,7 @@ router.get('/calendar', async (req: Request, res: Response) => {
 
     const contentRows = (contentData || []) as Array<Record<string, unknown>>;
     const contentIds = contentRows.map((r) => String(r.id)).filter(Boolean);
-    const flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean }> = {};
+    const flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean; has_facebook_approved: boolean; approved_facebook_posts: number }> = {};
 
     if (contentIds.length) {
       const { data: outputs, error: outErr } = await supabase
@@ -103,7 +103,7 @@ router.get('/calendar', async (req: Request, res: Response) => {
         .order('created_at', { ascending: false });
       if (outErr) throw new Error(outErr.message);
 
-      for (const id of contentIds) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false };
+      for (const id of contentIds) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
       for (const o of outputs || []) {
         const id = String((o as any).content_item_id);
         const status = (o as any).output_data?.status || 'completed';
@@ -111,6 +111,55 @@ router.get('/calendar', async (req: Request, res: Response) => {
         if ((o as any).output_type === 'hero_image') flagsById[id].has_hero = true;
         if ((o as any).output_type === 'infographic_image') flagsById[id].has_infographic = true;
       }
+
+      const itemToProduct = new Map<string, string>();
+      for (const it of contentRows) {
+        if ((it as any).id && (it as any).product_id) itemToProduct.set(String((it as any).id), String((it as any).product_id));
+      }
+
+      const missingItems = contentRows.filter((it) => (it as any)?.id && !itemToProduct.has(String((it as any).id)) && (it as any)?.product_title);
+      if (missingItems.length) {
+        const titles = Array.from(new Set(missingItems.map((it) => String((it as any).product_title).trim()).filter(Boolean)));
+        if (titles.length) {
+          const { data: productRows, error: productErr } = await supabase
+            .from('products')
+            .select('id,name')
+            .in('name', titles);
+          if (!productErr) {
+            const byName = new Map<string, string>();
+            for (const p of productRows || []) byName.set(String((p as any).name).toLowerCase(), String((p as any).id));
+            for (const it of missingItems) {
+              const pid = byName.get(String((it as any).product_title || '').toLowerCase());
+              if (pid) itemToProduct.set(String((it as any).id), pid);
+            }
+          }
+        }
+      }
+
+      const productIds = Array.from(new Set(Array.from(itemToProduct.values())));
+      if (productIds.length) {
+        const { data: fbRows, error: fbErr } = await supabase
+          .from('mock_facebook_posts')
+          .select('product_id')
+          .in('product_id', productIds)
+          .eq('approval_status', 'approved');
+        if (fbErr) throw new Error(fbErr.message);
+
+        const approvedByProduct = new Map<string, number>();
+        for (const row of fbRows || []) {
+          const pid = String((row as any).product_id || '');
+          if (!pid) continue;
+          approvedByProduct.set(pid, (approvedByProduct.get(pid) || 0) + 1);
+        }
+
+        for (const [itemId, productId] of itemToProduct.entries()) {
+          const c = approvedByProduct.get(productId) || 0;
+          if (!flagsById[itemId]) flagsById[itemId] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
+          flagsById[itemId].approved_facebook_posts = c;
+          flagsById[itemId].has_facebook_approved = c > 0;
+        }
+      }
+
       for (const id of Object.keys(flagsById)) {
         flagsById[id].creative_done = flagsById[id].has_hero && flagsById[id].has_infographic;
       }
@@ -118,7 +167,7 @@ router.get('/calendar', async (req: Request, res: Response) => {
 
     const contentItems = contentRows.map((row: Record<string, unknown>) => ({
       ...row,
-      ...(flagsById[String(row.id)] || { has_hero: false, has_infographic: false, creative_done: false }),
+      ...(flagsById[String(row.id)] || { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 }),
       item_type: 'content_item',
     }));
 
