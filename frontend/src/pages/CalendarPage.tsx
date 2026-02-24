@@ -36,6 +36,7 @@ export function CalendarPage() {
   const [view, setView] = useState<ViewMode>("month");
   const [dragItem, setDragItem] = useState<ContentItem | null>(null);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [batchState, setBatchState] = useState<{ running: boolean; mode?: 'sync'|'infographic'|'hero'|'both'; total?: number; startedAt?: number }>({ running: false });
 
   // Filters
   const [filters, setFilters] = useState({ brand: "", platform: "", status: "", assignee: "" });
@@ -190,10 +191,19 @@ export function CalendarPage() {
         toast('No visible items to sync', 'error');
         return;
       }
+      if (batchState.running) {
+        toast('A batch job is already running', 'error');
+        return;
+      }
+      setBatchState({ running: true, mode: 'sync', total: ids.length, startedAt: Date.now() });
+      toast(`Sync started for ${ids.length} visible item(s)…`, 'success');
       const res = await api.syncProductAssetsBatch(ids);
       toast(`Synced assets: ${res.okCount}/${res.processed} items (${res.createdTotal} outputs)`, 'success');
+      await fetchItems();
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Batch asset sync failed', 'error');
+    } finally {
+      setBatchState({ running: false });
     }
   };
 
@@ -204,10 +214,20 @@ export function CalendarPage() {
         toast('No visible items to generate', 'error');
         return;
       }
+      if (batchState.running) {
+        toast('A batch job is already running', 'error');
+        return;
+      }
+      setBatchState({ running: true, mode, total: ids.length, startedAt: Date.now() });
+      toast(`Generate ${mode} started for ${ids.length} visible item(s)…`, 'success');
       const res = await api.generateBatch(ids, mode);
-      toast(`Generated ${mode}: ${res.okCount}/${res.processed}`, 'success');
+      const failed = (res.processed || 0) - (res.okCount || 0);
+      toast(`Generated ${mode}: ${res.okCount}/${res.processed}${failed ? ` (${failed} failed)` : ''}`, failed ? 'error' : 'success');
+      await fetchItems();
     } catch (err) {
       toast(err instanceof Error ? err.message : `Batch ${mode} failed`, 'error');
+    } finally {
+      setBatchState({ running: false });
     }
   };
 
@@ -258,7 +278,8 @@ export function CalendarPage() {
 
           <button
             onClick={handleSyncVisibleAssets}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-cyan-700/40 to-blue-700/30 text-cyan-200 text-xs font-semibold hover:from-cyan-600/50 hover:to-blue-600/40 transition-all duration-200"
+            disabled={batchState.running}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-700/40 to-blue-700/30 text-cyan-200 hover:from-cyan-600/50 hover:to-blue-600/40'}`}
             title="Sync infographic/product images into outputs for currently visible items"
           >
             <Package className="h-3.5 w-3.5" />
@@ -267,19 +288,22 @@ export function CalendarPage() {
 
           <button
             onClick={() => handleGenerateVisible('infographic')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-700/30 text-emerald-200 text-xs font-semibold hover:bg-emerald-600/40 transition-all duration-200"
+            disabled={batchState.running}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-emerald-700/30 text-emerald-200 hover:bg-emerald-600/40'}`}
           >
             Gen Infographic
           </button>
           <button
             onClick={() => handleGenerateVisible('hero')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-fuchsia-700/30 text-fuchsia-200 text-xs font-semibold hover:bg-fuchsia-600/40 transition-all duration-200"
+            disabled={batchState.running}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-fuchsia-700/30 text-fuchsia-200 hover:bg-fuchsia-600/40'}`}
           >
             Gen Hero
           </button>
           <button
             onClick={() => handleGenerateVisible('both')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-700/30 text-amber-200 text-xs font-semibold hover:bg-amber-600/40 transition-all duration-200"
+            disabled={batchState.running}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-amber-700/30 text-amber-200 hover:bg-amber-600/40'}`}
           >
             Gen Both
           </button>
@@ -362,6 +386,13 @@ export function CalendarPage() {
             <div className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--th-surface))] border border-[hsl(var(--th-border))] text-xs text-[hsl(var(--th-text-secondary))] shadow-xl backdrop-blur-sm animate-fadeIn z-50">
               <div className="h-3 w-3 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
               Saving...
+            </div>
+          )}
+
+          {batchState.running && (
+            <div className="fixed bottom-20 right-6 flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--th-surface))] border border-[hsl(var(--th-border))] text-xs text-[hsl(var(--th-text-secondary))] shadow-xl backdrop-blur-sm animate-fadeIn z-50">
+              <div className="h-3 w-3 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+              Processing {batchState.mode} for {batchState.total} item(s)…
             </div>
           )}
         </div>
