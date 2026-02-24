@@ -677,7 +677,24 @@ function buildFinanceCopy(price: number | null): string | null {
   return 'Finance available over £1,000: £39.42/month • £6.67/week • Total cost £1,383.12';
 }
 
-function buildHeroPrompt(productName: string, productPrice: string, financeCopy: string | null) {
+function buildHeroPrompt(productName: string) {
+  return `Create a premium Fridgesmart product hero image for social story format (1080x1920, 9:16).
+
+Use the first image as the locked Fridgesmart brand background template.
+Use the second image as the product.
+
+Rules:
+- Keep the brand template style, colors, and logo area intact.
+- Place the product prominently in the lower-middle area with realistic grounding/shadow.
+- Add headline text at the bottom center: "${productName}"
+- Typography: bold, clean, high contrast, premium retail style.
+- Keep layout minimal and modern.
+- No clutter, no random icons, no extra badges, no fake UI.
+- Do not alter brand identity.
+- Output must look like polished campaign creative.`;
+}
+
+function buildHeroOfferPrompt(productName: string, productPrice: string, financeCopy: string | null) {
   return `Create a vertical Instagram/Facebook story image (1080x1920 style) for Fridgesmart.
 
 Use the FIRST input image as the exact product photo of ${productName}.
@@ -755,14 +772,22 @@ async function uploadGeneratedImage(path: string, buffer: Buffer) {
   return normalizePublicUrl(data.publicUrl);
 }
 
-async function generateHeroImage(itemId: string, productName: string, productImageUrl: string, productPriceRaw: unknown) {
+async function generateHeroImage(itemId: string, productName: string, productImageUrl: string) {
+  const templateUrl = process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
+  const prompt = buildHeroPrompt(productName);
+  const image = await generateWithNanoBanana(prompt, [templateUrl, productImageUrl]);
+  const url = await uploadGeneratedImage(`heroes/content_item_${itemId}_${Date.now()}.png`, image);
+  return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
+}
+
+async function generateHeroOfferImage(itemId: string, productName: string, productImageUrl: string, productPriceRaw: unknown) {
   const templateUrl = process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
   const priceNum = parsePriceToNumber(productPriceRaw);
   const productPrice = priceNum ? `£${priceNum.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Price on request';
   const financeCopy = buildFinanceCopy(priceNum);
-  const prompt = buildHeroPrompt(productName, productPrice, financeCopy);
+  const prompt = buildHeroOfferPrompt(productName, productPrice, financeCopy);
   const image = await generateWithNanoBanana(prompt, [productImageUrl, templateUrl]);
-  const url = await uploadGeneratedImage(`heroes/content_item_${itemId}_${Date.now()}.png`, image);
+  const url = await uploadGeneratedImage(`heroes/offer_content_item_${itemId}_${Date.now()}.png`, image);
   return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview', finance_applied: !!financeCopy, price: productPrice };
 }
 
@@ -801,14 +826,12 @@ async function processGenerateBatchJob(job: Job<GenerateBatchJobData>) {
           ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
           : null;
         if (!img) throw new Error('Product has no source image');
-        const hero = await generateHeroImage(item.id, product.name, img, (product as any).price);
+        const hero = await generateHeroImage(item.id, product.name, img);
         await createOutput(item.id, 'hero_image', {
           url: hero.url,
           prompt: hero.prompt,
           model: hero.model,
           product_name: product.name,
-          price: hero.price,
-          finance_applied: hero.finance_applied,
           mode: 'hero',
           status: 'completed',
         });
@@ -889,7 +912,7 @@ router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Requ
       : null;
     if (!productImage) return res.status(422).json({ error: 'Product has no source image' });
 
-    const hero = await generateHeroImage(item.id, product.name, productImage, (product as any).price);
+    const hero = await generateHeroImage(item.id, product.name, productImage);
     prompt = hero.prompt;
 
     await createOutput(item.id, 'hero_image', {
@@ -897,19 +920,56 @@ router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Requ
       prompt: hero.prompt,
       model: hero.model,
       product_name: product.name,
-      price: hero.price,
-      finance_applied: hero.finance_applied,
       mode: 'hero',
       status: 'completed',
     });
 
-    return res.json({ ok: true, mode: 'hero', url: hero.url, product_name: product.name, prompt: hero.prompt, model: hero.model, price: hero.price, finance_applied: hero.finance_applied });
+    return res.json({ ok: true, mode: 'hero', url: hero.url, product_name: product.name, prompt: hero.prompt, model: hero.model });
   } catch (err) {
     const error = err instanceof Error ? err.message : 'generate-hero failed';
     try {
       await createOutput(itemId, 'hero_image', { prompt, product_name: productName, mode: 'hero', status: 'failed', error });
     } catch {}
     console.error('generate-hero failed', err);
+    return res.status(500).json({ error });
+  }
+});
+
+router.post('/items/:id/generate-hero-offer', [param('id').isUUID()], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  let itemId = req.params.id;
+  let productName = '';
+  let prompt = '';
+  try {
+    const { item, product } = await getItemAndProduct(req.params.id);
+    itemId = item.id;
+    productName = product.name;
+    const productImage = Array.isArray(product.images) && product.images.length
+      ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
+      : null;
+    if (!productImage) return res.status(422).json({ error: 'Product has no source image' });
+
+    const hero = await generateHeroOfferImage(item.id, product.name, productImage, (product as any).price);
+    prompt = hero.prompt;
+
+    await createOutput(item.id, 'hero_image_offer', {
+      url: hero.url,
+      prompt: hero.prompt,
+      model: hero.model,
+      product_name: product.name,
+      price: hero.price,
+      finance_applied: hero.finance_applied,
+      mode: 'hero_offer',
+      status: 'completed',
+    });
+
+    return res.json({ ok: true, mode: 'hero_offer', url: hero.url, product_name: product.name, prompt: hero.prompt, model: hero.model, price: hero.price, finance_applied: hero.finance_applied });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : 'generate-hero-offer failed';
+    try {
+      await createOutput(itemId, 'hero_image_offer', { prompt, product_name: productName, mode: 'hero_offer', status: 'failed', error });
+    } catch {}
+    console.error('generate-hero-offer failed', err);
     return res.status(500).json({ error });
   }
 });
