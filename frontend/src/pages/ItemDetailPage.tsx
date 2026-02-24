@@ -357,31 +357,35 @@ export function ItemDetailPage() {
           {tab === "outputs" && (
             <div className="space-y-3">
               {/* Facebook Posts Section */}
-              {facebookPosts.length > 0 && (
+              {product && (
                 <div className="mb-4">
                   <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                    Facebook Posts ({facebookPosts.length})
+                    Facebook Posts {facebookPosts.length > 0 && `(${facebookPosts.length})`}
                   </h3>
-                  <div className="space-y-3">
-                    {facebookPosts.map((post) => (
-                      <FacebookPostCard
-                        key={post.id}
-                        content={post.content}
-                        image={post.image}
-                        likes={post.likes}
-                        comments={post.comments}
-                        shares={post.shares}
-                        approvalStatus={post.approval_status}
-                        createdAt={post.created_at}
-                        pageName={product?.name || "Page"}
-                        profilePicture={product?.thumbnail || undefined}
-                      />
-                    ))}
-                  </div>
+                  {facebookPosts.length > 0 ? (
+                    <div className="space-y-3">
+                      {facebookPosts.map((post) => (
+                        <FacebookPostCard
+                          key={post.id}
+                          content={post.content}
+                          image={post.image}
+                          likes={post.likes}
+                          comments={post.comments}
+                          shares={post.shares}
+                          approvalStatus={post.approval_status}
+                          createdAt={post.created_at}
+                          pageName={post.page_name || "Page"}
+                          profilePicture={post.page_profile_picture || undefined}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[hsl(var(--th-text-muted))]">No linked Facebook posts.</p>
+                  )}
                 </div>
               )}
 
-              {outputs.length === 0 && facebookPosts.length === 0 && <p className="text-sm text-[hsl(var(--th-text-muted))]">No outputs yet.</p>}
+              {outputs.length === 0 && !product && <p className="text-sm text-[hsl(var(--th-text-muted))]">No outputs yet.</p>}
               {outputs.map((o) => {
                 const outputUrl = typeof o.output_data?.url === 'string'
                   ? o.output_data.url

@@ -116,17 +116,31 @@ router.get('/categories', async (_req: Request, res: Response) => {
 router.get('/products/:productId/facebook-posts', async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
+    const requestedLimit = Math.min(Math.max(Number(req.query.limit) || 6, 1), 20);
 
+    // Fetch posts with page data joined via page_id foreign key
     const { data, error } = await supabase
       .from('mock_facebook_posts')
-      .select('*')
+      .select('*, mock_facebook_pages!page_id(name, profile_picture)')
       .eq('product_id', productId)
       .eq('approval_status', 'approved')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(requestedLimit);
 
     if (error) throw new Error(error.message);
 
-    res.json(data || []);
+    // Flatten page data into each post record for frontend convenience
+    const posts = (data || []).map((row: Record<string, unknown>) => {
+      const page = row.mock_facebook_pages as { name?: string; profile_picture?: string } | null;
+      const { mock_facebook_pages: _, ...post } = row;
+      return {
+        ...post,
+        page_name: page?.name || null,
+        page_profile_picture: page?.profile_picture || null,
+      };
+    });
+
+    res.json(posts);
   } catch (err) {
     console.error('Error fetching facebook posts for product:', err);
     res.status(500).json({ error: 'Failed to fetch facebook posts' });

@@ -93,7 +93,7 @@ async function request<T>(path: string): Promise<T> {
 export interface MockFacebookPostRecord {
     id: string;
     page_id: string;
-    product_id: string;
+    product_id: string | null;
     content: string;
     image?: string;
     likes: number;
@@ -103,6 +103,9 @@ export interface MockFacebookPostRecord {
     post_comments: string;
     created_at: string;
     updated_at: string;
+    /** Joined from mock_facebook_pages via page_id */
+    page_name: string | null;
+    page_profile_picture: string | null;
 }
 
 export const productApi = {
