@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, ContentItem, ContentComment, AuditEntry, ContentItemOutput } from "@/api/client";
-import { productApi, Product } from "@/api/productApi";
+import { productApi, Product, MockFacebookPostRecord } from "@/api/productApi";
+import { FacebookPostCard } from "@/components/FacebookPostCard";
 import { PriceTag } from "@/components/PriceTag";
 import { Badge } from "@/components/ui/badge";
 import { ItemFormModal } from "@/components/ItemFormModal";
@@ -36,6 +37,7 @@ export function ItemDetailPage() {
   const [transitionReason, setTransitionReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
+  const [facebookPosts, setFacebookPosts] = useState<MockFacebookPostRecord[]>([]);
 
   const fetchItem = useCallback(async () => {
     if (!id) return;
@@ -66,6 +68,14 @@ export function ItemDetailPage() {
       .then((res) => setProduct(res.items[0] || null))
       .catch(() => setProduct(null));
   }, [item?.product_title]);
+
+  // Fetch Facebook posts linked to this product
+  useEffect(() => {
+    if (!product?.id) { setFacebookPosts([]); return; }
+    productApi.getFacebookPosts(product.id)
+      .then((posts) => setFacebookPosts(posts))
+      .catch(() => setFacebookPosts([]));
+  }, [product?.id]);
 
   const handleTransition = async () => {
     if (!item || !transitionModal.to) return;
@@ -346,7 +356,36 @@ export function ItemDetailPage() {
 
           {tab === "outputs" && (
             <div className="space-y-3">
-              {outputs.length === 0 && <p className="text-sm text-[hsl(var(--th-text-muted))]">No outputs yet.</p>}
+              {/* Facebook Posts Section */}
+              {product && (
+                <div className="mb-4">
+                  <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    Facebook Posts {facebookPosts.length > 0 && `(${facebookPosts.length})`}
+                  </h3>
+                  {facebookPosts.length > 0 ? (
+                    <div className="space-y-3">
+                      {facebookPosts.map((post) => (
+                        <FacebookPostCard
+                          key={post.id}
+                          content={post.content}
+                          image={post.image}
+                          likes={post.likes}
+                          comments={post.comments}
+                          shares={post.shares}
+                          approvalStatus={post.approval_status}
+                          createdAt={post.created_at}
+                          pageName={post.page_name || "Page"}
+                          profilePicture={post.page_profile_picture || undefined}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[hsl(var(--th-text-muted))]">No linked Facebook posts.</p>
+                  )}
+                </div>
+              )}
+
+              {outputs.length === 0 && !product && <p className="text-sm text-[hsl(var(--th-text-muted))]">No outputs yet.</p>}
               {outputs.map((o) => {
                 const outputUrl = typeof o.output_data?.url === 'string'
                   ? o.output_data.url
