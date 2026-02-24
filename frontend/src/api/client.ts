@@ -106,6 +106,9 @@ export interface ContentItem {
   created_at: string;
   updated_at: string;
   valid_transitions?: string[];
+  has_hero?: boolean;
+  has_infographic?: boolean;
+  creative_done?: boolean;
 }
 
 export interface ContentComment {

@@ -80,6 +80,9 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule }
                 {item.platform && (
                     <div className="flex items-center gap-2 text-xs text-[hsl(var(--th-text-muted))]">
                         <span className="text-[10px] uppercase tracking-wider bg-[hsl(var(--th-input))] px-2 py-0.5 rounded font-medium">{item.platform}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${item.has_hero ? 'bg-fuchsia-500/20 text-fuchsia-300' : 'bg-zinc-700/40 text-zinc-400'}`}>H {item.has_hero ? '✓' : '·'}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${item.has_infographic ? 'bg-emerald-500/20 text-emerald-300' : 'bg-zinc-700/40 text-zinc-400'}`}>I {item.has_infographic ? '✓' : '·'}</span>
+                        {item.creative_done && <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-cyan-500/20 text-cyan-300">DONE</span>}
                     </div>
                 )}
                 {(item.publish_date || item.due_date) && (

@@ -90,7 +90,38 @@ router.get('/calendar', async (req: Request, res: Response) => {
       // social tables may not exist yet
     }
 
-    const contentItems = (contentData || []).map((row: Record<string, unknown>) => ({ ...row, item_type: 'content_item' }));
+    const contentRows = (contentData || []) as Array<Record<string, unknown>>;
+    const contentIds = contentRows.map((r) => String(r.id)).filter(Boolean);
+    const flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean }> = {};
+
+    if (contentIds.length) {
+      const { data: outputs, error: outErr } = await supabase
+        .from('content_item_outputs')
+        .select('content_item_id,output_type,output_data,created_at')
+        .in('content_item_id', contentIds)
+        .in('output_type', ['hero_image', 'infographic_image'])
+        .order('created_at', { ascending: false });
+      if (outErr) throw new Error(outErr.message);
+
+      for (const id of contentIds) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false };
+      for (const o of outputs || []) {
+        const id = String((o as any).content_item_id);
+        const status = (o as any).output_data?.status || 'completed';
+        if (status !== 'completed') continue;
+        if ((o as any).output_type === 'hero_image') flagsById[id].has_hero = true;
+        if ((o as any).output_type === 'infographic_image') flagsById[id].has_infographic = true;
+      }
+      for (const id of Object.keys(flagsById)) {
+        flagsById[id].creative_done = flagsById[id].has_hero && flagsById[id].has_infographic;
+      }
+    }
+
+    const contentItems = contentRows.map((row: Record<string, unknown>) => ({
+      ...row,
+      ...(flagsById[String(row.id)] || { has_hero: false, has_infographic: false, creative_done: false }),
+      item_type: 'content_item',
+    }));
+
     const allItems = [...contentItems, ...socialPosts] as Record<string, unknown>[];
     allItems.sort((a, b) => {
       const dateA = (a.publish_date || a.due_date) as string;

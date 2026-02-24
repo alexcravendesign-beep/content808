@@ -74,7 +74,38 @@ router.get('/items', async (req: Request, res: Response) => {
     const { data, error } = await dataQuery;
     if (error) throw new Error(error.message);
 
-    res.json({ items: data || [], total, limit: pageLimit, offset: pageOffset });
+    const items = data || [];
+    const ids = items.map((i: any) => i.id).filter(Boolean);
+    let flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean }> = {};
+
+    if (ids.length) {
+      const { data: outputs, error: outErr } = await supabase
+        .from('content_item_outputs')
+        .select('content_item_id,output_type,output_data,created_at')
+        .in('content_item_id', ids)
+        .in('output_type', ['hero_image', 'infographic_image'])
+        .order('created_at', { ascending: false });
+      if (outErr) throw new Error(outErr.message);
+
+      for (const id of ids) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false };
+
+      for (const o of outputs || []) {
+        const id = (o as any).content_item_id as string;
+        if (!flagsById[id]) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false };
+        const status = (o as any).output_data?.status || 'completed';
+        if (status !== 'completed') continue;
+        if ((o as any).output_type === 'hero_image') flagsById[id].has_hero = true;
+        if ((o as any).output_type === 'infographic_image') flagsById[id].has_infographic = true;
+      }
+
+      for (const id of Object.keys(flagsById)) {
+        flagsById[id].creative_done = flagsById[id].has_hero && flagsById[id].has_infographic;
+      }
+    }
+
+    const enriched = items.map((i: any) => ({ ...i, ...(flagsById[i.id] || { has_hero: false, has_infographic: false, creative_done: false }) }));
+
+    res.json({ items: enriched, total, limit: pageLimit, offset: pageOffset });
   } catch (err) {
     console.error('Error fetching items:', err);
     res.status(500).json({ error: 'Failed to fetch items' });

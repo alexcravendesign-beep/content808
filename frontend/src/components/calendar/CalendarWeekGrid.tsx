@@ -84,6 +84,8 @@ export function CalendarWeekGrid({
                                         <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${STATUS_DOT[item.status] || "bg-zinc-500"}`} />
                                         <span className="capitalize truncate">{item.status}</span>
                                         {item.platform && <span className="text-[hsl(var(--th-text-muted))]">· {item.platform}</span>}
+                                        <span className={`h-2 w-2 rounded-full ${item.has_hero ? 'bg-fuchsia-400' : 'bg-zinc-600'}`} title={item.has_hero ? 'Hero done' : 'Hero missing'} />
+                                        <span className={`h-2 w-2 rounded-full ${item.has_infographic ? 'bg-emerald-400' : 'bg-zinc-600'}`} title={item.has_infographic ? 'Infographic done' : 'Infographic missing'} />
                                     </div>
                                 </div>
                             ))}

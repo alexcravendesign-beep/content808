@@ -105,6 +105,8 @@ export function CalendarAgendaView({ items, onItemClick }: CalendarAgendaViewPro
                                                     {item.product_title || item.brand}
                                                 </span>
                                                 <StatusBadge status={item.status} size="sm" />
+                                                <span className={`h-2 w-2 rounded-full ${item.has_hero ? 'bg-fuchsia-400' : 'bg-zinc-600'}`} title={item.has_hero ? 'Hero done' : 'Hero missing'} />
+                                                <span className={`h-2 w-2 rounded-full ${item.has_infographic ? 'bg-emerald-400' : 'bg-zinc-600'}`} title={item.has_infographic ? 'Infographic done' : 'Infographic missing'} />
                                                 {item.platform && (
                                                     <span className="text-[10px] text-[hsl(var(--th-text-muted))] uppercase tracking-wider shrink-0 bg-[hsl(var(--th-input))] px-1.5 py-0.5 rounded">
                                                         {item.platform}

@@ -117,6 +117,12 @@ export function CalendarMonthGrid({
                                                     {item.platform && (
                                                         <span className="text-[9px] text-[hsl(var(--th-text-muted))] uppercase">{item.platform}</span>
                                                     )}
+                                                    {(item as unknown as { item_type?: string }).item_type === 'content_item' && (
+                                                        <>
+                                                            <span className={`h-2 w-2 rounded-full ${item.has_hero ? 'bg-fuchsia-400' : 'bg-zinc-600'}`} title={item.has_hero ? 'Hero done' : 'Hero missing'} />
+                                                            <span className={`h-2 w-2 rounded-full ${item.has_infographic ? 'bg-emerald-400' : 'bg-zinc-600'}`} title={item.has_infographic ? 'Infographic done' : 'Infographic missing'} />
+                                                        </>
+                                                    )}
                                                     {(item as unknown as { item_type?: string }).item_type === 'social_post' && (
                                                         <span className="inline-flex h-3 w-3 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" title="Social Post" />
                                                     )}
