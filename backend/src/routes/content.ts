@@ -56,8 +56,16 @@ router.get('/items', async (req: Request, res: Response) => {
       const pattern = `%${search}%`;
       // campaign_goal and direction may be TEXT (pre-migration) or JSONB (post-migration)
       // ilike works on both types; ::text cast is only needed for JSONB but breaks on TEXT
-      countQuery = countQuery.or(`brand.ilike.${pattern},campaign_goal.ilike.${pattern},direction.ilike.${pattern}`);
-      dataQuery = dataQuery.or(`brand.ilike.${pattern},campaign_goal.ilike.${pattern},direction.ilike.${pattern}`);
+      const searchOr = [
+        `brand.ilike.${pattern}`,
+        `product_title.ilike.${pattern}`,
+        `pivot_notes.ilike.${pattern}`,
+        `final_copy.ilike.${pattern}`,
+        `campaign_goal.ilike.${pattern}`,
+        `direction.ilike.${pattern}`,
+      ].join(',');
+      countQuery = countQuery.or(searchOr);
+      dataQuery = dataQuery.or(searchOr);
     }
 
     const { count, error: countError } = await countQuery;
