@@ -112,4 +112,25 @@ router.get('/categories', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /products/:productId/facebook-posts - Get approved mock Facebook posts for a product
+router.get('/products/:productId/facebook-posts', async (req: Request, res: Response) => {
+  try {
+    const { productId } = req.params;
+
+    const { data, error } = await supabase
+      .from('mock_facebook_posts')
+      .select('*')
+      .eq('product_id', productId)
+      .eq('approval_status', 'approved')
+      .order('created_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    res.json(data || []);
+  } catch (err) {
+    console.error('Error fetching facebook posts for product:', err);
+    res.status(500).json({ error: 'Failed to fetch facebook posts' });
+  }
+});
+
 export default router;

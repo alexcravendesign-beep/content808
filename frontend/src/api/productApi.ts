@@ -90,6 +90,21 @@ async function request<T>(path: string): Promise<T> {
     return res.json();
 }
 
+export interface MockFacebookPostRecord {
+    id: string;
+    page_id: string;
+    product_id: string;
+    content: string;
+    image?: string;
+    likes: number;
+    comments: number;
+    shares: number;
+    approval_status: string;
+    post_comments: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export const productApi = {
     searchProducts: (params: ProductSearchParams = {}) => {
         const qs = new URLSearchParams();
@@ -104,4 +119,7 @@ export const productApi = {
     getStats: () => request<ProductStats>('/products/stats'),
 
     getCategories: () => request<{ items: CategoryItem[] }>('/categories'),
+
+    getFacebookPosts: (productId: string) =>
+        request<MockFacebookPostRecord[]>(`/products/${productId}/facebook-posts`),
 };
