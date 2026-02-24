@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { api, ContentItem } from "@/api/client";
 import { useToast } from "@/components/ui/toast";
 import { ItemFormModal } from "@/components/ItemFormModal";
-import { ChevronLeft, ChevronRight, Plus, CalendarDays, CalendarRange, Clock, List, Package } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, CalendarDays, CalendarRange, Clock, List, Package, PanelLeft } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay
@@ -34,6 +34,7 @@ export function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<ViewMode>("month");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dragItem, setDragItem] = useState<ContentItem | null>(null);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [batchState, setBatchState] = useState<{ running: boolean; mode?: 'sync'|'infographic'|'hero'|'both'; total?: number; processed?: number; startedAt?: number }>({ running: false });
@@ -267,6 +268,14 @@ export function CalendarPage() {
             Calendar
           </h1>
           <button
+            onClick={() => setSidebarOpen((v) => !v)}
+            className={`px-2.5 py-1.5 text-xs rounded-lg border transition-all duration-200 flex items-center gap-1.5 ${sidebarOpen ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-200' : 'bg-[hsl(var(--th-input))] border-[hsl(var(--th-border))] text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))]'}`}
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          >
+            <PanelLeft className="h-3.5 w-3.5" />
+            Sidebar
+          </button>
+          <button
             onClick={() => setCurrentDate(new Date())}
             className="px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))] hover:text-[hsl(var(--th-text))] transition-all duration-200 font-medium"
           >
@@ -351,16 +360,18 @@ export function CalendarPage() {
 
       {/* ── Main Content ── */}
       <div className="flex gap-5">
-        {/* Sidebar */}
-        <CalendarSidebar
-          currentDate={currentDate}
-          onDateSelect={(date) => {
-            setCurrentDate(date);
-          }}
-          items={items}
-        />
+        {/* Sliding Sidebar (default closed) */}
+        <div className={`transition-all duration-300 ease-out overflow-hidden ${sidebarOpen ? 'w-64 opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
+          <CalendarSidebar
+            currentDate={currentDate}
+            onDateSelect={(date) => {
+              setCurrentDate(date);
+            }}
+            items={items}
+          />
+        </div>
 
-        {/* Calendar View */}
+        {/* Calendar View (grows bigger when sidebar is closed) */}
         <div className="flex-1 min-w-0">
           {loading ? (
             <CalendarSkeleton view={view} />
