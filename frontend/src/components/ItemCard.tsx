@@ -1,7 +1,7 @@
 import { ContentItem } from "@/api/client";
 import { campaignGoalLabel } from "@/lib/formatHelpers";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, User, ExternalLink } from "lucide-react";
+import { Calendar, User, ExternalLink, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { STATUS_DOT, STATUS_GLOW } from "@/lib/statusConfig";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
@@ -9,10 +9,11 @@ import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
 interface ItemCardProps {
   item: ContentItem;
   onClick?: () => void;
+  onViewOutputs?: () => void;
   compact?: boolean;
 }
 
-export function ItemCard({ item, onClick, compact }: ItemCardProps) {
+export function ItemCard({ item, onClick, onViewOutputs, compact }: ItemCardProps) {
   return (
     <div
       onClick={onClick}
@@ -63,6 +64,15 @@ export function ItemCard({ item, onClick, compact }: ItemCardProps) {
             <Calendar className="h-3 w-3" />
             {format(new Date(item.due_date), "MMM d")}
           </span>
+        )}
+        {onViewOutputs && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onViewOutputs(); }}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-colors"
+            title="View outputs"
+          >
+            <FileText className="h-3 w-3" /> Outputs
+          </button>
         )}
         {item.product_url && (
           <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />

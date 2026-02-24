@@ -9,9 +9,10 @@ interface KanbanLaneProps {
   borderColor: string;
   bgColor: string;
   onItemClick: (item: ContentItem) => void;
+  onViewOutputs?: (item: ContentItem) => void;
 }
 
-export function KanbanLane({ status, items, borderColor, bgColor, onItemClick }: KanbanLaneProps) {
+export function KanbanLane({ status, items, borderColor, bgColor, onItemClick, onViewOutputs }: KanbanLaneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
   return (
@@ -25,14 +26,14 @@ export function KanbanLane({ status, items, borderColor, bgColor, onItemClick }:
       </div>
       <div className="p-2 space-y-2 min-h-24">
         {items.map((item) => (
-          <DraggableItem key={item.id} item={item} onClick={() => onItemClick(item)} />
+          <DraggableItem key={item.id} item={item} onClick={() => onItemClick(item)} onViewOutputs={onViewOutputs ? () => onViewOutputs(item) : undefined} />
         ))}
       </div>
     </div>
   );
 }
 
-function DraggableItem({ item, onClick }: { item: ContentItem; onClick: () => void }) {
+function DraggableItem({ item, onClick, onViewOutputs }: { item: ContentItem; onClick: () => void; onViewOutputs?: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
 
   const style = transform
@@ -41,7 +42,7 @@ function DraggableItem({ item, onClick }: { item: ContentItem; onClick: () => vo
 
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
-      <ItemCard item={item} onClick={onClick} compact />
+      <ItemCard item={item} onClick={onClick} onViewOutputs={onViewOutputs} compact />
     </div>
   );
 }

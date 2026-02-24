@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ContentItem, ContentComment, AuditEntry, ContentItemOutput } from "@/api/client";
 import { productApi, Product, MockFacebookPostRecord } from "@/api/productApi";
 import { FacebookPostCard } from "@/components/FacebookPostCard";
@@ -25,6 +25,7 @@ const ACTION_ICONS: Record<string, React.ElementType> = {
 export function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const [item, setItem] = useState<(ContentItem & { valid_transitions?: string[] }) | null>(null);
   const [comments, setComments] = useState<ContentComment[]>([]);
@@ -32,12 +33,19 @@ export function ItemDetailPage() {
   const [outputs, setOutputs] = useState<ContentItemOutput[]>([]);
   const [newComment, setNewComment] = useState("");
   const [editOpen, setEditOpen] = useState(false);
-  const [tab, setTab] = useState<"comments" | "history" | "outputs">("comments");
+  const initialTab = searchParams.get("tab");
+  const isValidTab = (v: string | null): v is "comments" | "history" | "outputs" => v === "comments" || v === "history" || v === "outputs";
+  const [tab, setTab] = useState<"comments" | "history" | "outputs">(isValidTab(initialTab) ? initialTab : "comments");
   const [transitionModal, setTransitionModal] = useState<{ open: boolean; to: string }>({ open: false, to: "" });
   const [transitionReason, setTransitionReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
   const [facebookPosts, setFacebookPosts] = useState<MockFacebookPostRecord[]>([]);
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (isValidTab(t) && t !== tab) setTab(t);
+  }, [searchParams, tab]);
 
   const fetchItem = useCallback(async () => {
     if (!id) return;
@@ -284,7 +292,7 @@ export function ItemDetailPage() {
           {(["comments", "history", "outputs"] as const).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => { setTab(t); setSearchParams((prev) => { const p = new URLSearchParams(prev); p.set("tab", t); return p; }); }}
               className={`px-4 py-3 text-sm font-medium capitalize transition-colors ${tab === t ? "text-[hsl(var(--th-text))] border-b-2 border-indigo-500" : "text-[hsl(var(--th-text-muted))] hover:text-[hsl(var(--th-text-secondary))]"}`}
             >
               {t === "comments" && <MessageSquare className="h-3.5 w-3.5 inline mr-1.5" />}

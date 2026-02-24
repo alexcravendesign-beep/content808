@@ -113,17 +113,24 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule }
             </div>
 
             {/* Actions */}
-            <div className="flex gap-2 px-4 pb-4">
+            <div className="grid grid-cols-2 gap-2 px-4 pb-4">
                 <button
                     onClick={() => navigate(`/item/${item.id}`)}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600/20 text-indigo-400 text-xs font-medium hover:bg-indigo-600/30 transition-colors"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600/20 text-indigo-400 text-xs font-medium hover:bg-indigo-600/30 transition-colors"
                 >
                     View Detail
                     <ArrowRight className="h-3 w-3" />
                 </button>
                 <button
+                    onClick={() => navigate(`/item/${item.id}?tab=outputs`)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/20 text-emerald-300 text-xs font-medium hover:bg-emerald-600/30 transition-colors"
+                >
+                    Outputs
+                    <ArrowRight className="h-3 w-3" />
+                </button>
+                <button
                     onClick={() => onReschedule(item)}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] text-xs font-medium hover:bg-[hsl(var(--th-surface-hover))] transition-colors"
+                    className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] text-xs font-medium hover:bg-[hsl(var(--th-surface-hover))] transition-colors"
                 >
                     <Clock className="h-3 w-3" />
                     Reschedule
