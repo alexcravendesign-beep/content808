@@ -76,6 +76,12 @@ export const api = {
   getActivity: (limit = 100) => request<{ entries: AuditEntry[] }>(`/audit?limit=${limit}`),
 
   agentFill: (id: string) => request<{ jobId: string }>(`/items/${id}/agent-fill`, { method: 'POST' }),
+  syncProductAssets: (id: string) => request<{ ok: boolean; created: number; product_name: string }>(`/items/${id}/sync-product-assets`, { method: 'POST' }),
+  syncProductAssetsBatch: (item_ids: string[]) => request<{ ok: boolean; processed: number; okCount: number; createdTotal: number }>(`/items/sync-product-assets-batch`, { method: 'POST', body: { item_ids } }),
+  generateInfographic: (id: string) => request<{ ok: boolean; mode: string; url: string; product_name: string }>(`/items/${id}/generate-infographic`, { method: 'POST' }),
+  generateHero: (id: string) => request<{ ok: boolean; mode: string; url: string; product_name: string }>(`/items/${id}/generate-hero`, { method: 'POST' }),
+  generateBoth: (id: string) => request<{ ok: boolean; infographic: unknown; hero: unknown }>(`/items/${id}/generate-both`, { method: 'POST' }),
+  generateBatch: (item_ids: string[], mode: 'infographic'|'hero'|'both') => request<{ ok: boolean; processed: number; okCount: number }>(`/items/generate-batch`, { method: 'POST', body: { item_ids, mode } }),
 };
 
 export interface ContentItem {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { api, ContentItem } from "@/api/client";
 import { useToast } from "@/components/ui/toast";
 import { ItemFormModal } from "@/components/ItemFormModal";
-import { ChevronLeft, ChevronRight, Plus, CalendarDays, CalendarRange, Clock, List } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, CalendarDays, CalendarRange, Clock, List, Package } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay
@@ -183,6 +183,34 @@ export function CalendarPage() {
     setCreateModal({ open: true, date });
   };
 
+  const handleSyncVisibleAssets = async () => {
+    try {
+      const ids = items.map((i) => i.id);
+      if (!ids.length) {
+        toast('No visible items to sync', 'error');
+        return;
+      }
+      const res = await api.syncProductAssetsBatch(ids);
+      toast(`Synced assets: ${res.okCount}/${res.processed} items (${res.createdTotal} outputs)`, 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Batch asset sync failed', 'error');
+    }
+  };
+
+  const handleGenerateVisible = async (mode: 'infographic'|'hero'|'both') => {
+    try {
+      const ids = items.map((i) => i.id);
+      if (!ids.length) {
+        toast('No visible items to generate', 'error');
+        return;
+      }
+      const res = await api.generateBatch(ids, mode);
+      toast(`Generated ${mode}: ${res.okCount}/${res.processed}`, 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : `Batch ${mode} failed`, 'error');
+    }
+  };
+
   return (
     <div className="animate-fadeIn">
       {/* ── Top Bar ── */}
@@ -227,6 +255,34 @@ export function CalendarPage() {
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
+
+          <button
+            onClick={handleSyncVisibleAssets}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-cyan-700/40 to-blue-700/30 text-cyan-200 text-xs font-semibold hover:from-cyan-600/50 hover:to-blue-600/40 transition-all duration-200"
+            title="Sync infographic/product images into outputs for currently visible items"
+          >
+            <Package className="h-3.5 w-3.5" />
+            Sync Assets
+          </button>
+
+          <button
+            onClick={() => handleGenerateVisible('infographic')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-700/30 text-emerald-200 text-xs font-semibold hover:bg-emerald-600/40 transition-all duration-200"
+          >
+            Gen Infographic
+          </button>
+          <button
+            onClick={() => handleGenerateVisible('hero')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-fuchsia-700/30 text-fuchsia-200 text-xs font-semibold hover:bg-fuchsia-600/40 transition-all duration-200"
+          >
+            Gen Hero
+          </button>
+          <button
+            onClick={() => handleGenerateVisible('both')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-700/30 text-amber-200 text-xs font-semibold hover:bg-amber-600/40 transition-all duration-200"
+          >
+            Gen Both
+          </button>
 
           {/* New Item */}
           <button

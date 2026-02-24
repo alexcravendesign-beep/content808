@@ -138,6 +138,8 @@ REQUIREMENTS:
 3. Body: Persuasive, short paragraphs.
 4. Benefits: Exactly 3 key bullet points.
 5. Tone: Match the brand voice.
+6. CTA URL: Use an explicit URL if present in context; otherwise use "#".
+7. Keep all output fields non-empty.
 
 OUTPUT FORMAT:
 Return a JSON Object matching this structure (Do not use Markdown blocks):
@@ -209,6 +211,12 @@ Visual Direction: {{VISUAL_DIRECTION}}
 {{IMAGE_INSTRUCTIONS}}
 
 TASK: Create exactly 3 social media posts based on this concept.
+
+REQUIREMENTS:
+- Each post must target a different platform: Instagram, Facebook, LinkedIn.
+- Captions should be 60-120 words and include a clear CTA.
+- Provide 5-10 relevant hashtags (no duplicates, no hashtag symbol in the text body).
+- imagePrompt must be photorealistic, specific, and include lighting/composition details.
 
 OUTPUT FORMAT:
 Return a JSON Array of objects (Do not use Markdown blocks):
