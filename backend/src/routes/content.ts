@@ -3,12 +3,20 @@ import { Buffer } from 'node:buffer';
 import { supabase } from '../db/connection';
 import { body, param, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
+import { Queue, Worker, Job } from 'bullmq';
+import { redisConnection } from '../db/redis';
 import { logAudit, getAuditLog } from '../services/audit';
 import { canTransition, getValidTransitions, getAllStatuses } from '../services/transitions';
 import { requireRole } from '../middleware/auth';
 import { ContentStatus, UserRole } from '../types';
 
 const router = Router();
+
+const generateBatchQueue = new Queue('generate-batch', { connection: redisConnection });
+let generateBatchWorkerStarted = false;
+
+type GenerateMode = 'infographic' | 'hero' | 'both';
+interface GenerateBatchJobData { itemIds: string[]; mode: GenerateMode; actorId: string; actorRole: string; }
 
 function handleValidation(req: Request, res: Response): boolean {
   const errors = validationResult(req);
@@ -720,6 +728,71 @@ async function generateInfographicImage(itemId: string, product: any) {
   return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
 }
 
+async function processGenerateBatchJob(job: Job<GenerateBatchJobData>) {
+  const { itemIds, mode } = job.data;
+  const results: Array<{ item_id: string; ok: boolean; error?: string }> = [];
+
+  for (let i = 0; i < itemIds.length; i++) {
+    const id = itemIds[i];
+    try {
+      const { item, product } = await getItemAndProduct(id);
+
+      if (mode === 'infographic' || mode === 'both') {
+        const inf = await generateInfographicImage(item.id, product);
+        await createOutput(item.id, 'infographic_image', {
+          url: inf.url,
+          prompt: inf.prompt,
+          model: inf.model,
+          product_name: product.name,
+          mode: 'infographic',
+          status: 'completed',
+        });
+      }
+
+      if (mode === 'hero' || mode === 'both') {
+        const img = Array.isArray(product.images) && product.images.length
+          ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
+          : null;
+        if (!img) throw new Error('Product has no source image');
+        const hero = await generateHeroImage(item.id, product.name, img);
+        await createOutput(item.id, 'hero_image', {
+          url: hero.url,
+          prompt: hero.prompt,
+          model: hero.model,
+          product_name: product.name,
+          mode: 'hero',
+          status: 'completed',
+        });
+      }
+
+      results.push({ item_id: id, ok: true });
+    } catch (e) {
+      const error = e instanceof Error ? e.message : 'unknown_error';
+      try {
+        if (mode === 'hero' || mode === 'both') await createOutput(id, 'hero_image', { mode: 'hero', status: 'failed', error });
+        if (mode === 'infographic' || mode === 'both') await createOutput(id, 'infographic_image', { mode: 'infographic', status: 'failed', error });
+      } catch {}
+      results.push({ item_id: id, ok: false, error });
+    }
+
+    await job.updateProgress({ processed: i + 1, total: itemIds.length, okCount: results.filter((r) => r.ok).length });
+  }
+
+  return { ok: true, processed: itemIds.length, okCount: results.filter((r) => r.ok).length, results };
+}
+
+function ensureGenerateBatchWorker() {
+  if (generateBatchWorkerStarted) return;
+  const worker = new Worker<GenerateBatchJobData>('generate-batch', processGenerateBatchJob, {
+    connection: redisConnection,
+    concurrency: 1,
+  });
+  worker.on('failed', (job, err) => console.error('[generate-batch] failed', job?.id, err.message));
+  generateBatchWorkerStarted = true;
+}
+
+ensureGenerateBatchWorker();
+
 router.post('/items/:id/generate-infographic', [param('id').isUUID()], async (req: Request, res: Response) => {
   if (!handleValidation(req, res)) return;
   let itemId = req.params.id;
@@ -836,88 +909,48 @@ router.post('/items/generate-batch', [body('item_ids').isArray({ min: 1 }), body
     const incomingIds = req.body.item_ids as string[];
     const maxBatch = Number(process.env.CONTENT808_MAX_BATCH_GENERATE || 8);
     if (incomingIds.length > maxBatch) {
-      return res.status(422).json({
-        error: `Batch too large (${incomingIds.length}). Max allowed is ${maxBatch}. Narrow filters/date range and retry.`,
-      });
+      return res.status(422).json({ error: `Batch too large (${incomingIds.length}). Max allowed is ${maxBatch}. Narrow filters/date range and retry.` });
     }
 
-    const ids = incomingIds.slice(0, maxBatch);
-    const mode = req.body.mode as 'infographic' | 'hero' | 'both';
-    const results: Array<{ item_id: string; ok: boolean; error?: string }> = [];
+    const job = await generateBatchQueue.add('generate', {
+      itemIds: incomingIds.slice(0, maxBatch),
+      mode: req.body.mode as GenerateMode,
+      actorId: req.user!.id,
+      actorRole: req.user!.role,
+    }, {
+      removeOnComplete: 50,
+      removeOnFail: 100,
+    });
 
-    for (const id of ids) {
-      try {
-        if (mode === 'infographic') {
-          const { item, product } = await getItemAndProduct(id);
-          const inf = await generateInfographicImage(item.id, product);
-          await createOutput(item.id, 'infographic_image', {
-            url: inf.url,
-            prompt: inf.prompt,
-            model: inf.model,
-            product_name: product.name,
-            mode: 'infographic',
-            status: 'completed',
-          });
-        } else if (mode === 'hero') {
-          const { item, product } = await getItemAndProduct(id);
-          const img = Array.isArray(product.images) && product.images.length
-            ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
-            : null;
-          if (!img) throw new Error('Product has no source image');
-          const hero = await generateHeroImage(item.id, product.name, img);
-          await createOutput(item.id, 'hero_image', {
-            url: hero.url,
-            prompt: hero.prompt,
-            model: hero.model,
-            product_name: product.name,
-            mode: 'hero',
-            status: 'completed',
-          });
-        } else {
-          const { item, product } = await getItemAndProduct(id);
-          const inf = await generateInfographicImage(item.id, product);
-          await createOutput(item.id, 'infographic_image', {
-            url: inf.url,
-            prompt: inf.prompt,
-            model: inf.model,
-            product_name: product.name,
-            mode: 'infographic',
-            status: 'completed',
-          });
-          const img = Array.isArray(product.images) && product.images.length
-            ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
-            : null;
-          if (!img) throw new Error('Product has no source image');
-          const hero = await generateHeroImage(item.id, product.name, img);
-          await createOutput(item.id, 'hero_image', {
-            url: hero.url,
-            prompt: hero.prompt,
-            model: hero.model,
-            product_name: product.name,
-            mode: 'hero',
-            status: 'completed',
-          });
-        }
-        results.push({ item_id: id, ok: true });
-      } catch (e) {
-        const error = e instanceof Error ? e.message : 'unknown_error';
-        try {
-          if (mode === 'hero' || mode === 'both') {
-            await createOutput(id, 'hero_image', { mode: 'hero', status: 'failed', error });
-          }
-          if (mode === 'infographic' || mode === 'both') {
-            await createOutput(id, 'infographic_image', { mode: 'infographic', status: 'failed', error });
-          }
-        } catch {}
-        results.push({ item_id: id, ok: false, error });
-      }
-    }
-
-    const okCount = results.filter(r => r.ok).length;
-    res.json({ ok: true, processed: results.length, okCount, results });
+    return res.status(202).json({ ok: true, queued: true, jobId: job.id });
   } catch (err) {
-    console.error('Error generate-batch:', err);
-    res.status(500).json({ error: 'Failed to run generate batch' });
+    console.error('Error queueing generate-batch:', err);
+    res.status(500).json({ error: 'Failed to queue generate batch' });
+  }
+});
+
+router.get('/items/generate-batch/:jobId', [param('jobId').notEmpty()], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const job = await generateBatchQueue.getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const state = await job.getState();
+    const progress = (job.progress as any) || { processed: 0, total: 0, okCount: 0 };
+
+    if (state === 'completed') {
+      const value: any = await job.returnvalue;
+      return res.json({ state, ...value, progress });
+    }
+
+    if (state === 'failed') {
+      return res.json({ state, error: job.failedReason, progress });
+    }
+
+    return res.json({ state, progress });
+  } catch (err) {
+    console.error('Error reading generate-batch job:', err);
+    res.status(500).json({ error: 'Failed to read batch job' });
   }
 });
 

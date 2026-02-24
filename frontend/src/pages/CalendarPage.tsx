@@ -36,7 +36,7 @@ export function CalendarPage() {
   const [view, setView] = useState<ViewMode>("month");
   const [dragItem, setDragItem] = useState<ContentItem | null>(null);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
-  const [batchState, setBatchState] = useState<{ running: boolean; mode?: 'sync'|'infographic'|'hero'|'both'; total?: number; startedAt?: number }>({ running: false });
+  const [batchState, setBatchState] = useState<{ running: boolean; mode?: 'sync'|'infographic'|'hero'|'both'; total?: number; processed?: number; startedAt?: number }>({ running: false });
 
   // Filters
   const [filters, setFilters] = useState({ brand: "", platform: "", status: "", assignee: "" });
@@ -195,7 +195,7 @@ export function CalendarPage() {
         toast('A batch job is already running', 'error');
         return;
       }
-      setBatchState({ running: true, mode: 'sync', total: ids.length, startedAt: Date.now() });
+      setBatchState({ running: true, mode: 'sync', total: ids.length, processed: 0, startedAt: Date.now() });
       toast(`Sync started for ${ids.length} visible item(s)…`, 'success');
       const res = await api.syncProductAssetsBatch(ids);
       toast(`Synced assets: ${res.okCount}/${res.processed} items (${res.createdTotal} outputs)`, 'success');
@@ -223,11 +223,33 @@ export function CalendarPage() {
         toast('A batch job is already running', 'error');
         return;
       }
-      setBatchState({ running: true, mode, total: ids.length, startedAt: Date.now() });
-      toast(`Generate ${mode} started for ${ids.length} visible item(s)…`, 'success');
-      const res = await api.generateBatch(ids, mode);
-      const failed = (res.processed || 0) - (res.okCount || 0);
-      toast(`Generated ${mode}: ${res.okCount}/${res.processed}${failed ? ` (${failed} failed)` : ''}`, failed ? 'error' : 'success');
+      setBatchState({ running: true, mode, total: ids.length, processed: 0, startedAt: Date.now() });
+      toast(`Generate ${mode} queued for ${ids.length} visible item(s)…`, 'success');
+      const queued = await api.generateBatch(ids, mode);
+
+      let done = false;
+      for (let i = 0; i < 240; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const s = await api.getGenerateBatchStatus(queued.jobId);
+        const p = s.progress || { processed: 0, total: ids.length, okCount: 0 };
+        setBatchState((prev) => ({ running: true, mode, total: p.total || ids.length, processed: p.processed || 0, startedAt: prev.startedAt || Date.now() }));
+
+        if (s.state === 'completed') {
+          const processed = s.processed || p.processed || ids.length;
+          const okCount = s.okCount || p.okCount || 0;
+          const failed = processed - okCount;
+          toast(`Generated ${mode}: ${okCount}/${processed}${failed ? ` (${failed} failed)` : ''}`, failed ? 'error' : 'success');
+          done = true;
+          break;
+        }
+        if (s.state === 'failed') {
+          toast(`Batch ${mode} failed: ${s.error || 'unknown error'}`, 'error');
+          done = true;
+          break;
+        }
+      }
+
+      if (!done) toast(`Batch ${mode} is still running in background`, 'error');
       await fetchItems();
     } catch (err) {
       toast(err instanceof Error ? err.message : `Batch ${mode} failed`, 'error');
@@ -397,7 +419,7 @@ export function CalendarPage() {
           {batchState.running && (
             <div className="fixed bottom-20 right-6 flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--th-surface))] border border-[hsl(var(--th-border))] text-xs text-[hsl(var(--th-text-secondary))] shadow-xl backdrop-blur-sm animate-fadeIn z-50">
               <div className="h-3 w-3 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
-              Processing {batchState.mode} for {batchState.total} item(s)…
+              Processing {batchState.mode} {batchState.processed || 0}/{batchState.total || 0}…
             </div>
           )}
         </div>

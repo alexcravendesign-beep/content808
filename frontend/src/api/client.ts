@@ -81,7 +81,8 @@ export const api = {
   generateInfographic: (id: string) => request<{ ok: boolean; mode: string; url: string; product_name: string }>(`/items/${id}/generate-infographic`, { method: 'POST' }),
   generateHero: (id: string) => request<{ ok: boolean; mode: string; url: string; product_name: string }>(`/items/${id}/generate-hero`, { method: 'POST' }),
   generateBoth: (id: string) => request<{ ok: boolean; infographic: unknown; hero: unknown }>(`/items/${id}/generate-both`, { method: 'POST' }),
-  generateBatch: (item_ids: string[], mode: 'infographic'|'hero'|'both') => request<{ ok: boolean; processed: number; okCount: number }>(`/items/generate-batch`, { method: 'POST', body: { item_ids, mode } }),
+  generateBatch: (item_ids: string[], mode: 'infographic'|'hero'|'both') => request<{ ok: boolean; queued: boolean; jobId: string }>(`/items/generate-batch`, { method: 'POST', body: { item_ids, mode } }),
+  getGenerateBatchStatus: (jobId: string) => request<{ state: string; progress?: { processed: number; total: number; okCount: number }; ok?: boolean; processed?: number; okCount?: number; error?: string }>(`/items/generate-batch/${jobId}`),
 };
 
 export interface ContentItem {
