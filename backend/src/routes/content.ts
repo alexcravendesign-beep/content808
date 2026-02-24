@@ -103,6 +103,27 @@ router.get('/items', async (req: Request, res: Response) => {
         if ((it as any).id && (it as any).product_id) itemToProduct.set((it as any).id, (it as any).product_id);
       }
 
+      // Backward-compat: older DBs may not have content_items.product_id yet.
+      // Fallback map by exact product_title -> products.name (case-insensitive).
+      const missingItems = (items as any[]).filter((it) => it?.id && !itemToProduct.has(it.id) && it?.product_title);
+      if (missingItems.length) {
+        const titles = Array.from(new Set(missingItems.map((it) => String(it.product_title).trim()).filter(Boolean)));
+        if (titles.length) {
+          const { data: productRows, error: productErr } = await supabase
+            .from('products')
+            .select('id,name')
+            .in('name', titles);
+          if (!productErr) {
+            const byName = new Map<string, string>();
+            for (const p of productRows || []) byName.set(String((p as any).name).toLowerCase(), String((p as any).id));
+            for (const it of missingItems) {
+              const pid = byName.get(String(it.product_title || '').toLowerCase());
+              if (pid) itemToProduct.set(it.id, pid);
+            }
+          }
+        }
+      }
+
       const productIds = Array.from(new Set(Array.from(itemToProduct.values())));
       if (productIds.length) {
         const { data: fbRows, error: fbErr } = await supabase
