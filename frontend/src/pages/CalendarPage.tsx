@@ -274,7 +274,7 @@ export function CalendarPage() {
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           {/* View switcher */}
           <div className="flex rounded-xl border border-[hsl(var(--th-border))] overflow-hidden glass-panel">
             {VIEW_CONFIG.map(({ id, label, icon: Icon }) => (
@@ -306,7 +306,7 @@ export function CalendarPage() {
           <button
             onClick={handleSyncVisibleAssets}
             disabled={batchState.running}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-700/40 to-blue-700/30 text-cyan-200 hover:from-cyan-600/50 hover:to-blue-600/40'}`}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-700/40 to-blue-700/30 text-cyan-200 hover:from-cyan-600/50 hover:to-blue-600/40'}`}
             title="Sync infographic/product images into outputs for currently visible items"
           >
             <Package className="h-3.5 w-3.5" />
@@ -316,21 +316,21 @@ export function CalendarPage() {
           <button
             onClick={() => handleGenerateVisible('infographic')}
             disabled={batchState.running}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-emerald-700/30 text-emerald-200 hover:bg-emerald-600/40'}`}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-emerald-700/30 text-emerald-200 hover:bg-emerald-600/40'}`}
           >
             Gen Infographic
           </button>
           <button
             onClick={() => handleGenerateVisible('hero')}
             disabled={batchState.running}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-fuchsia-700/30 text-fuchsia-200 hover:bg-fuchsia-600/40'}`}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-fuchsia-700/30 text-fuchsia-200 hover:bg-fuchsia-600/40'}`}
           >
             Gen Hero
           </button>
           <button
             onClick={() => handleGenerateVisible('both')}
             disabled={batchState.running}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-amber-700/30 text-amber-200 hover:bg-amber-600/40'}`}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-amber-700/30 text-amber-200 hover:bg-amber-600/40'}`}
           >
             Gen Both
           </button>
@@ -338,7 +338,7 @@ export function CalendarPage() {
           {/* New Item */}
           <button
             onClick={() => setCreateModal({ open: true, date: currentDate })}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-indigo-500 text-white text-xs font-semibold hover:from-indigo-500 hover:to-indigo-400 transition-all duration-200 shadow-lg shadow-indigo-600/20"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-indigo-500 text-white text-[11px] font-semibold hover:from-indigo-500 hover:to-indigo-400 transition-all duration-200 shadow-lg shadow-indigo-600/20"
           >
             <Plus className="h-3.5 w-3.5" />
             New Item

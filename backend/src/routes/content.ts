@@ -665,20 +665,33 @@ OUTPUT STYLE: Modern corporate infographic, flat design aesthetic, professional 
     .replace('{{BRAND_COLORS}}', 'Blue (#005F87), Teal (#00B7C6)');
 }
 
-function buildHeroPrompt(productName: string) {
-  return `Create a premium Fridgesmart product hero image for social story format (1080x1920, 9:16).
+function parsePriceToNumber(raw: unknown): number | null {
+  if (raw == null) return null;
+  const cleaned = String(raw).replace(/[^0-9.]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
-Use the first image as the locked Fridgesmart brand background template.
-Use the second image as the product.
+function buildFinanceCopy(price: number | null): string | null {
+  if (!price || price <= 1000) return null;
+  return 'Finance available over £1,000: £39.42/month • £6.67/week • Total cost £1,383.12';
+}
+
+function buildHeroPrompt(productName: string, productPrice: string, financeCopy: string | null) {
+  return `Create a vertical Instagram/Facebook story image (1080x1920 style) for Fridgesmart.
+
+Use the FIRST input image as the exact product photo of ${productName}.
+Use the SECOND input image as the official Fridgesmart logo/background reference at the top. Do not redraw the logo.
+
+Style: clean premium commercial refrigeration ad, blue/white branding, bold readable text.
+Include text exactly: "${productName}" and "${productPrice}".
+${financeCopy ? `Add a finance badge because this item is over £1000. Finance text must read exactly: "${financeCopy}".` : 'No finance box on this one because price is under £1000.'}
+Include CTA exactly: "Shop now at fridgesmart.co.uk".
 
 Rules:
-- Keep the brand template style, colors, and logo area intact.
-- Place the product prominently in the lower-middle area with realistic grounding/shadow.
-- Add headline text at the bottom center: "${productName}"
-- Typography: bold, clean, high contrast, premium retail style.
-- Keep layout minimal and modern.
-- No clutter, no random icons, no extra badges, no fake UI.
-- Do not alter brand identity.
+- Keep composition premium and uncluttered.
+- Keep typography highly legible for story view.
+- Do not invent specs, badges, or random UI elements.
 - Output must look like polished campaign creative.`;
 }
 
@@ -742,12 +755,15 @@ async function uploadGeneratedImage(path: string, buffer: Buffer) {
   return normalizePublicUrl(data.publicUrl);
 }
 
-async function generateHeroImage(itemId: string, productName: string, productImageUrl: string) {
+async function generateHeroImage(itemId: string, productName: string, productImageUrl: string, productPriceRaw: unknown) {
   const templateUrl = process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
-  const prompt = buildHeroPrompt(productName);
-  const image = await generateWithNanoBanana(prompt, [templateUrl, productImageUrl]);
+  const priceNum = parsePriceToNumber(productPriceRaw);
+  const productPrice = priceNum ? `£${priceNum.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Price on request';
+  const financeCopy = buildFinanceCopy(priceNum);
+  const prompt = buildHeroPrompt(productName, productPrice, financeCopy);
+  const image = await generateWithNanoBanana(prompt, [productImageUrl, templateUrl]);
   const url = await uploadGeneratedImage(`heroes/content_item_${itemId}_${Date.now()}.png`, image);
-  return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
+  return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview', finance_applied: !!financeCopy, price: productPrice };
 }
 
 async function generateInfographicImage(itemId: string, product: any) {
@@ -785,12 +801,14 @@ async function processGenerateBatchJob(job: Job<GenerateBatchJobData>) {
           ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
           : null;
         if (!img) throw new Error('Product has no source image');
-        const hero = await generateHeroImage(item.id, product.name, img);
+        const hero = await generateHeroImage(item.id, product.name, img, (product as any).price);
         await createOutput(item.id, 'hero_image', {
           url: hero.url,
           prompt: hero.prompt,
           model: hero.model,
           product_name: product.name,
+          price: hero.price,
+          finance_applied: hero.finance_applied,
           mode: 'hero',
           status: 'completed',
         });
@@ -871,7 +889,7 @@ router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Requ
       : null;
     if (!productImage) return res.status(422).json({ error: 'Product has no source image' });
 
-    const hero = await generateHeroImage(item.id, product.name, productImage);
+    const hero = await generateHeroImage(item.id, product.name, productImage, (product as any).price);
     prompt = hero.prompt;
 
     await createOutput(item.id, 'hero_image', {
@@ -879,11 +897,13 @@ router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Requ
       prompt: hero.prompt,
       model: hero.model,
       product_name: product.name,
+      price: hero.price,
+      finance_applied: hero.finance_applied,
       mode: 'hero',
       status: 'completed',
     });
 
-    return res.json({ ok: true, mode: 'hero', url: hero.url, product_name: product.name, prompt: hero.prompt, model: hero.model });
+    return res.json({ ok: true, mode: 'hero', url: hero.url, product_name: product.name, prompt: hero.prompt, model: hero.model, price: hero.price, finance_applied: hero.finance_applied });
   } catch (err) {
     const error = err instanceof Error ? err.message : 'generate-hero failed';
     try {
