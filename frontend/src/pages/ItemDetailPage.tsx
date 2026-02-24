@@ -400,6 +400,10 @@ export function ItemDetailPage() {
                 const outputUrl = typeof o.output_data?.url === 'string'
                   ? o.output_data.url
                   : (typeof o.output_data?.image_url === 'string' ? o.output_data.image_url : null);
+                const cleanOutputData = Object.fromEntries(
+                  Object.entries((o.output_data || {}) as Record<string, unknown>)
+                    .filter(([k]) => !k.startsWith('product_') && k !== 'brand' && k !== 'productName')
+                );
 
                 return (
                   <div key={o.id} className="bg-[hsl(var(--th-input)/0.5)] rounded-lg p-3">
@@ -420,31 +424,31 @@ export function ItemDetailPage() {
                           className="w-full max-w-sm rounded-md border border-[hsl(var(--th-border))] object-cover"
                           loading="lazy"
                         />
-                        {typeof o.output_data?.prompt === 'string' && (
+                        {typeof cleanOutputData?.prompt === 'string' && (
                           <details className="text-xs text-[hsl(var(--th-text-muted))]">
                             <summary className="cursor-pointer">Show prompt</summary>
-                            <pre className="mt-2 whitespace-pre-wrap">{o.output_data.prompt}</pre>
+                            <pre className="mt-2 whitespace-pre-wrap">{String(cleanOutputData.prompt)}</pre>
                           </details>
                         )}
                       </div>
-                    ) : o.output_type === "draft_copy" && typeof o.output_data.text === "string" ? (
-                      <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap">{o.output_data.text}</p>
-                    ) : o.output_type === "metadata" && Array.isArray(o.output_data.hashtags) ? (
+                    ) : o.output_type === "draft_copy" && typeof cleanOutputData.text === "string" ? (
+                      <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap">{String(cleanOutputData.text)}</p>
+                    ) : o.output_type === "metadata" && Array.isArray(cleanOutputData.hashtags) ? (
                       <div className="flex flex-wrap gap-1.5">
-                        {(o.output_data.hashtags as string[]).map((tag, i) => (
+                        {(cleanOutputData.hashtags as string[]).map((tag, i) => (
                           <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-medium">{tag}</span>
                         ))}
                       </div>
-                    ) : o.output_type === "asset_prompt_suggestions" && Array.isArray(o.output_data.prompts) ? (
+                    ) : o.output_type === "asset_prompt_suggestions" && Array.isArray(cleanOutputData.prompts) ? (
                       <ul className="space-y-1.5 pl-1">
-                        {(o.output_data.prompts as string[]).map((p, i) => (
+                        {(cleanOutputData.prompts as string[]).map((p, i) => (
                           <li key={i} className="text-xs text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
                             <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 shrink-0" />{p}
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <pre className="text-xs text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap overflow-hidden">{JSON.stringify(o.output_data, null, 2)}</pre>
+                      <pre className="text-xs text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap overflow-hidden">{JSON.stringify(cleanOutputData, null, 2)}</pre>
                     )}
                   </div>
                 );
