@@ -498,6 +498,26 @@ router.post('/items/:id/sync-product-assets', [param('id').isUUID()], async (req
   }
 });
 
+function norm(s: string) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function scoreTitleMatch(itemTitle: string, productName: string) {
+  const a = norm(itemTitle);
+  const b = norm(productName);
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  if (b.includes(a)) return 90;
+  if (a.includes(b)) return 80;
+
+  const aTokens = new Set(a.split(' ').filter(Boolean));
+  const bTokens = new Set(b.split(' ').filter(Boolean));
+  let overlap = 0;
+  for (const t of aTokens) if (bTokens.has(t)) overlap++;
+  const denom = Math.max(aTokens.size, 1);
+  return Math.round((overlap / denom) * 70);
+}
+
 async function getItemAndProduct(itemId: string) {
   const { data: item, error: itemErr } = await supabase
     .from('content_items')
@@ -507,14 +527,40 @@ async function getItemAndProduct(itemId: string) {
   if (itemErr) throw new Error(itemErr.message);
   if (!item) throw new Error('Item not found');
 
-  const productTitle = item.product_title || '';
+  const productTitle = String(item.product_title || '').trim();
+  if (!productTitle) throw new Error('Item has no product_title');
+
+  // Pull candidate set by title only (brand fallback caused wrong product reuse)
   const { data: products, error: productErr } = await supabase
     .from('products')
     .select('id,name,brand,category,description,features,technical_specs,benefits,images,infographic_url,infographic_prompt')
-    .or(`name.ilike.%${productTitle}%,brand.ilike.%${item.brand || ''}%`)
-    .limit(1);
+    .ilike('name', `%${productTitle}%`)
+    .limit(25);
   if (productErr) throw new Error(productErr.message);
-  const product = products?.[0];
+
+  let candidates = products || [];
+
+  // If nothing title-matched, do a wider pull and rank by similarity
+  if (!candidates.length) {
+    const { data: wide, error: wideErr } = await supabase
+      .from('products')
+      .select('id,name,brand,category,description,features,technical_specs,benefits,images,infographic_url,infographic_prompt')
+      .limit(200);
+    if (wideErr) throw new Error(wideErr.message);
+    candidates = (wide || [])
+      .map((p) => ({ ...p, _score: scoreTitleMatch(productTitle, String(p.name || '')) }))
+      .filter((p: any) => p._score >= 35)
+      .sort((x: any, y: any) => y._score - x._score)
+      .slice(0, 25) as any;
+  }
+
+  if (!candidates.length) throw new Error(`No matching product found for title: ${productTitle}`);
+
+  const ranked = candidates
+    .map((p: any) => ({ ...p, _score: scoreTitleMatch(productTitle, String(p.name || '')) }))
+    .sort((x: any, y: any) => y._score - x._score);
+
+  const product = ranked[0] as any;
   if (!product) throw new Error('No matching product found');
 
   return { item, product };
