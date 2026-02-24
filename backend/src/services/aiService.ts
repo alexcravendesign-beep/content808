@@ -109,11 +109,32 @@ export function cleanAndParseJSON(text: string): unknown {
 // Provider-specific generation helpers
 // ---------------------------------------------------------------------------
 
+const DEFAULT_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 45000);
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /**
  * Generate content via Google Gemini (REST).
  * Uses the `generativelanguage.googleapis.com` v1beta endpoint.
  */
-async function generateWithGemini(prompt: string, systemInstruction: string, modelId: string): Promise<string> {
+async function generateWithGemini(
+  prompt: string,
+  systemInstruction: string,
+  modelId: string,
+  expectJson = false,
+): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
 
@@ -121,16 +142,18 @@ async function generateWithGemini(prompt: string, systemInstruction: string, mod
 
   const body: Record<string, unknown> = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: 'application/json',
-    },
+    generationConfig: expectJson
+      ? {
+          responseMimeType: 'application/json',
+        }
+      : undefined,
   };
 
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -152,7 +175,12 @@ async function generateWithGemini(prompt: string, systemInstruction: string, mod
 /**
  * Generate content via OpenAI-compatible API.
  */
-async function generateWithOpenAI(prompt: string, systemInstruction: string, modelId: string): Promise<string> {
+async function generateWithOpenAI(
+  prompt: string,
+  systemInstruction: string,
+  modelId: string,
+  expectJson = false,
+): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
 
@@ -162,7 +190,7 @@ async function generateWithOpenAI(prompt: string, systemInstruction: string, mod
   }
   messages.push({ role: 'user', content: prompt });
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -171,7 +199,7 @@ async function generateWithOpenAI(prompt: string, systemInstruction: string, mod
     body: JSON.stringify({
       model: modelId,
       messages,
-      response_format: { type: 'json_object' },
+      ...(expectJson ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
 
@@ -191,7 +219,12 @@ async function generateWithOpenAI(prompt: string, systemInstruction: string, mod
 /**
  * Generate content via Anthropic Messages API.
  */
-async function generateWithAnthropic(prompt: string, systemInstruction: string, modelId: string): Promise<string> {
+async function generateWithAnthropic(
+  prompt: string,
+  systemInstruction: string,
+  modelId: string,
+  _expectJson = false,
+): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set');
 
@@ -205,7 +238,7 @@ async function generateWithAnthropic(prompt: string, systemInstruction: string, 
     body.system = systemInstruction;
   }
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -231,7 +264,12 @@ async function generateWithAnthropic(prompt: string, systemInstruction: string, 
 /**
  * Generate content via OpenRouter (OpenAI-compatible).
  */
-async function generateWithOpenRouter(prompt: string, systemInstruction: string, modelId: string): Promise<string> {
+async function generateWithOpenRouter(
+  prompt: string,
+  systemInstruction: string,
+  modelId: string,
+  expectJson = false,
+): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set');
 
@@ -241,7 +279,7 @@ async function generateWithOpenRouter(prompt: string, systemInstruction: string,
   }
   messages.push({ role: 'user', content: prompt });
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const res = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -250,6 +288,7 @@ async function generateWithOpenRouter(prompt: string, systemInstruction: string,
     body: JSON.stringify({
       model: modelId,
       messages,
+      ...(expectJson ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
 
@@ -283,23 +322,26 @@ export async function generateWithModel(
   prompt: string,
   systemInstruction: string,
   modelId: string,
+  options?: { expectJson?: boolean },
 ): Promise<string> {
+  const expectJson = options?.expectJson ?? false;
+
   return retry(async () => {
     if (modelId.startsWith('openai:')) {
       const realModel = modelId.replace('openai:', '');
-      return generateWithOpenAI(prompt, systemInstruction, realModel);
+      return generateWithOpenAI(prompt, systemInstruction, realModel, expectJson);
     }
 
     if (modelId.startsWith('anthropic:')) {
       const realModel = modelId.replace('anthropic:', '');
-      return generateWithAnthropic(prompt, systemInstruction, realModel);
+      return generateWithAnthropic(prompt, systemInstruction, realModel, expectJson);
     }
 
     if (modelId.includes('/')) {
-      return generateWithOpenRouter(prompt, systemInstruction, modelId);
+      return generateWithOpenRouter(prompt, systemInstruction, modelId, expectJson);
     }
 
     // Default: Gemini
-    return generateWithGemini(prompt, systemInstruction, modelId);
+    return generateWithGemini(prompt, systemInstruction, modelId, expectJson);
   });
 }

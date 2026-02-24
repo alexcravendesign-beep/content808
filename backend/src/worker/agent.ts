@@ -11,6 +11,46 @@ interface AgentFillData {
     itemId: string;
 }
 
+function promptExpectsJson(promptId: PromptId): boolean {
+    return promptId !== PromptId.SCENE_DESCRIPTION;
+}
+
+function buildSystemInstruction(promptId: PromptId): string {
+    if (!promptExpectsJson(promptId)) {
+        return 'Return plain text only. Do not use markdown code fences.';
+    }
+
+    return [
+        'You are a strict JSON generator.',
+        'Return valid minified JSON only (no markdown, no prose, no code fences).',
+        'If a field is unknown, use an empty string, empty array, or null depending on structure.',
+        'Do not include any keys that are not requested by the prompt schema.',
+    ].join(' ');
+}
+
+function normalizeOutput(parsedOutput: unknown): string {
+    if (typeof parsedOutput === 'string') return parsedOutput;
+    if (Array.isArray(parsedOutput)) {
+        const first = parsedOutput[0];
+        if (typeof first === 'string') return first;
+        if (first && typeof first === 'object') {
+            const firstObj = first as Record<string, unknown>;
+            const candidate = firstObj.caption ?? firstObj.headline ?? firstObj.bodyContent ?? firstObj.content;
+            if (typeof candidate === 'string') return candidate;
+        }
+        return JSON.stringify(parsedOutput);
+    }
+
+    if (parsedOutput && typeof parsedOutput === 'object') {
+        const obj = parsedOutput as Record<string, unknown>;
+        const candidate = obj.bodyContent ?? obj.caption ?? obj.headline ?? obj.text ?? obj.description;
+        if (typeof candidate === 'string') return candidate;
+        return JSON.stringify(obj);
+    }
+
+    return String(parsedOutput);
+}
+
 // ---------------------------------------------------------------------------
 // Determine the best prompt template based on the content item's properties
 // ---------------------------------------------------------------------------
@@ -127,10 +167,13 @@ async function processAgentFill(job: Job<AgentFillData>) {
 
     // 3. Call the AI model
     const modelId = process.env.DEFAULT_AI_MODEL || 'gemini-2.0-flash';
+    const systemInstruction = buildSystemInstruction(promptId);
     let aiResponseText: string;
 
     try {
-        aiResponseText = await generateWithModel(prompt, '', modelId);
+        aiResponseText = await generateWithModel(prompt, systemInstruction, modelId, {
+            expectJson: promptExpectsJson(promptId),
+        });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[agent-fill] AI generation failed for item ${itemId}:`, message);
@@ -157,14 +200,7 @@ async function processAgentFill(job: Job<AgentFillData>) {
     }
 
     // 5. Build outputs to store
-    const draftCopy =
-        typeof parsedOutput === 'object' && parsedOutput !== null
-            ? (parsedOutput as Record<string, unknown>).bodyContent ??
-              (parsedOutput as Record<string, unknown>).caption ??
-              (parsedOutput as Record<string, unknown>).headline ??
-              (parsedOutput as Record<string, unknown>).text ??
-              JSON.stringify(parsedOutput)
-            : String(parsedOutput);
+    const draftCopy = normalizeOutput(parsedOutput);
 
     const outputs: { type: string; data: unknown }[] = [
         { type: 'draft_copy', data: parsedOutput },
@@ -173,6 +209,7 @@ async function processAgentFill(job: Job<AgentFillData>) {
             data: {
                 prompt_id: promptId,
                 model: modelId,
+                system_instruction: systemInstruction,
                 generated_at: new Date().toISOString(),
             },
         },
