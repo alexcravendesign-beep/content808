@@ -67,7 +67,7 @@ export function CalendarMonthGrid({
                         return (
                             <div
                                 key={di}
-                                className={`min-h-[110px] border-b border-r border-[hsl(var(--th-border)/0.4)] p-1.5 transition-colors duration-150 calendar-cell-hover ${inMonth ? "" : "opacity-30"
+                                className={`min-h-[160px] border-b border-r border-[hsl(var(--th-border)/0.4)] p-2 transition-colors duration-150 calendar-cell-hover ${inMonth ? "" : "opacity-30"
                                     } ${dragItem ? "hover:bg-indigo-500/[0.06]" : ""}`}
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={() => onDrop(day)}
@@ -94,7 +94,7 @@ export function CalendarMonthGrid({
                                 </div>
 
                                 {/* Product-first items */}
-                                <div className="space-y-0.5">
+                                <div className="space-y-1">
                                     {dayItems.slice(0, 3).map((item) => (
                                         <div
                                             key={item.id}
@@ -106,23 +106,16 @@ export function CalendarMonthGrid({
                                                 e.stopPropagation();
                                                 onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect());
                                             }}
-                                            className={`flex items-center gap-1.5 px-1 py-[3px] rounded-md border-l-2 ${STATUS_STRIP[item.status] || "border-l-zinc-500"} bg-[hsl(var(--th-surface-hover))] hover:bg-[hsl(var(--th-input))] cursor-grab active:cursor-grabbing calendar-item transition-colors`}
+                                            className={`flex items-center gap-2 px-1.5 py-1 rounded-md border-l-2 ${STATUS_STRIP[item.status] || "border-l-zinc-500"} bg-[hsl(var(--th-surface-hover))] hover:bg-[hsl(var(--th-input))] cursor-grab active:cursor-grabbing calendar-item transition-colors`}
                                         >
                                             <ProductThumbnail item={item} size="sm" />
                                             <div className="min-w-0 flex-1">
-                                                <div className="text-[10px] font-medium text-[hsl(var(--th-text))] truncate">
+                                                <div className="text-[11px] font-medium text-[hsl(var(--th-text))] truncate">
                                                     {item.product_title || item.brand}
                                                 </div>
                                                 <div className="flex items-center gap-1">
                                                     {item.platform && (
-                                                        <span className="text-[9px] text-[hsl(var(--th-text-muted))] uppercase">{item.platform}</span>
-                                                    )}
-                                                    {(item as unknown as { item_type?: string }).item_type === 'content_item' && (
-                                                        <>
-                                                            <span className={`h-2 w-2 rounded-full ${item.has_hero ? 'bg-fuchsia-400' : 'bg-zinc-600'}`} title={item.has_hero ? 'Hero done' : 'Hero missing'} />
-                                                            <span className={`h-2 w-2 rounded-full ${item.has_infographic ? 'bg-emerald-400' : 'bg-zinc-600'}`} title={item.has_infographic ? 'Infographic done' : 'Infographic missing'} />
-                                                            <span className={`h-2 w-2 rounded-full ${item.has_facebook_approved ? 'bg-green-400' : 'bg-zinc-600'}`} title={item.has_facebook_approved ? `Facebook approved (${item.approved_facebook_posts || 0})` : 'No approved Facebook posts'} />
-                                                        </>
+                                                        <span className="text-[10px] text-[hsl(var(--th-text-muted))] uppercase">{item.platform}</span>
                                                     )}
                                                     {(item as unknown as { item_type?: string }).item_type === 'social_post' && (
                                                         <span className="inline-flex h-3 w-3 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" title="Social Post" />

@@ -30,7 +30,7 @@ function resolveTheme(theme: Theme): "light" | "dark" {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [theme, setThemeState] = useState<Theme>(() => {
         const saved = localStorage.getItem("theme") as Theme | null;
-        return saved && ["light", "dark", "system"].includes(saved) ? saved : "dark";
+        return saved && ["light", "dark", "system"].includes(saved) ? saved : "system";
     });
 
     const resolved = resolveTheme(theme);
