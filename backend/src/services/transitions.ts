@@ -7,6 +7,7 @@ interface TransitionRule {
 }
 
 const TRANSITION_RULES: TransitionRule[] = [
+  // Forward transitions
   { from: 'idea', to: 'draft', allowedRoles: ['staff', 'manager', 'admin'] },
   { from: 'draft', to: 'review', allowedRoles: ['staff', 'manager', 'admin'] },
   { from: 'review', to: 'approved', allowedRoles: ['manager', 'admin'] },
@@ -17,6 +18,21 @@ const TRANSITION_RULES: TransitionRule[] = [
   { from: 'scheduled', to: 'published', allowedRoles: ['manager', 'admin'] },
   { from: 'approved', to: 'blocked', allowedRoles: ['manager', 'admin'] },
   { from: 'scheduled', to: 'blocked', allowedRoles: ['manager', 'admin'] },
+
+  // Backward transitions
+  { from: 'draft', to: 'idea', allowedRoles: ['staff', 'manager', 'admin'] },
+  { from: 'review', to: 'draft', allowedRoles: ['staff', 'manager', 'admin'] },
+  { from: 'approved', to: 'review', allowedRoles: ['manager', 'admin'] },
+  { from: 'approved', to: 'draft', allowedRoles: ['manager', 'admin'] },
+  { from: 'scheduled', to: 'approved', allowedRoles: ['manager', 'admin'] },
+  { from: 'scheduled', to: 'review', allowedRoles: ['manager', 'admin'] },
+  { from: 'scheduled', to: 'draft', allowedRoles: ['manager', 'admin'] },
+  { from: 'published', to: 'scheduled', allowedRoles: ['manager', 'admin'] },
+  { from: 'published', to: 'approved', allowedRoles: ['manager', 'admin'] },
+  { from: 'published', to: 'review', allowedRoles: ['manager', 'admin'] },
+  { from: 'published', to: 'draft', allowedRoles: ['manager', 'admin'] },
+  { from: 'published', to: 'idea', allowedRoles: ['admin'] },
+  { from: 'blocked', to: 'idea', allowedRoles: ['staff', 'manager', 'admin'] },
 ];
 
 export function getValidTransitions(currentStatus: ContentStatus, role: UserRole): ContentStatus[] {
