@@ -33,17 +33,17 @@ interface CalendarFilterBarProps {
 const PLATFORMS = ["", "instagram", "tiktok", "youtube", "twitter", "facebook", "linkedin", "email", "blog"];
 const STATUSES = ["", "idea", "draft", "review", "approved", "blocked", "scheduled", "published"];
 
-function MiniCalendarPicker({ currentDate, onDateSelect, onClose }: {
+function MiniCalendarPicker({ currentDate, onDateSelect, onClose, containerRef }: {
     currentDate: Date;
     onDateSelect: (date: Date) => void;
     onClose: () => void;
+    containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
     const [miniMonth, setMiniMonth] = useState(currentDate);
-    const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) onClose();
         };
         const handleEscape = (e: KeyboardEvent) => {
             if (e.key === "Escape") onClose();
@@ -54,7 +54,7 @@ function MiniCalendarPicker({ currentDate, onDateSelect, onClose }: {
             document.removeEventListener("mousedown", handleClickOutside);
             document.removeEventListener("keydown", handleEscape);
         };
-    }, [onClose]);
+    }, [onClose, containerRef]);
 
     const monthStart = startOfMonth(miniMonth);
     const calStart = startOfWeek(monthStart, { weekStartsOn: 0 });
@@ -71,7 +71,6 @@ function MiniCalendarPicker({ currentDate, onDateSelect, onClose }: {
 
     return (
         <div
-            ref={ref}
             className="absolute top-full left-0 mt-1 z-50 w-64 p-3 rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] shadow-xl shadow-black/20 animate-fadeIn"
         >
             <div className="flex items-center justify-between mb-3">
@@ -137,6 +136,7 @@ export function CalendarFilterBar({
     const hasFilters = filters.brand || filters.platform || filters.status || filters.assignee;
 
     const [pickerOpen, setPickerOpen] = useState(false);
+    const pickerContainerRef = useRef<HTMLDivElement>(null);
 
     return (
         <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -211,7 +211,7 @@ export function CalendarFilterBar({
             </div>
 
             {/* Calendar picker button */}
-            <div className="relative">
+            <div className="relative" ref={pickerContainerRef}>
                 <button
                     onClick={() => setPickerOpen((prev) => !prev)}
                     className="flex items-center justify-center h-8 w-8 rounded-lg bg-[hsl(var(--th-input))] border border-[hsl(var(--th-border))] text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))] hover:text-[hsl(var(--th-text))] transition-all"
@@ -224,6 +224,7 @@ export function CalendarFilterBar({
                         currentDate={currentDate}
                         onDateSelect={onDateSelect}
                         onClose={() => setPickerOpen(false)}
+                        containerRef={pickerContainerRef}
                     />
                 )}
             </div>
