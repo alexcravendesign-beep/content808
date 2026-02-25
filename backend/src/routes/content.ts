@@ -7,6 +7,7 @@ import { Queue, Worker, Job } from 'bullmq';
 import { redisConnection } from '../db/redis';
 import { logAudit, getAuditLog } from '../services/audit';
 import { canTransition, getValidTransitions, getAllStatuses } from '../services/transitions';
+import { checkAutoTransition } from '../services/auto-status';
 import { requireRole } from '../middleware/auth';
 import { ContentStatus, UserRole } from '../types';
 
@@ -579,6 +580,11 @@ async function syncAssetsForItem(itemId: string, actorId: string, actorRole: Use
     details: { synced_outputs: outputsToCreate.map(o => o.output_type), product_name: product.name },
   });
 
+  // Auto-transition after syncing assets
+  if (outputsToCreate.length > 0) {
+    await checkAutoTransition(item.id);
+  }
+
   return { ok: true, created: outputsToCreate.length, product_name: product.name };
 }
 
@@ -777,6 +783,12 @@ async function createOutput(contentItemId: string, output_type: string, output_d
     output_data,
   });
   if (error) throw new Error(error.message);
+
+  // Auto-transition: idea→draft when any output created, draft→review when all creative done
+  const status = (output_data?.status as string) || 'completed';
+  if (status === 'completed') {
+    await checkAutoTransition(contentItemId);
+  }
 }
 
 async function urlToInlineData(url: string): Promise<{ mimeType: string; data: string }> {
