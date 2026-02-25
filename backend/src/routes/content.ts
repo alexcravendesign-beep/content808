@@ -62,8 +62,6 @@ router.get('/items', async (req: Request, res: Response) => {
         `product_title.ilike.${pattern}`,
         `pivot_notes.ilike.${pattern}`,
         `final_copy.ilike.${pattern}`,
-        `campaign_goal.ilike.${pattern}`,
-        `direction.ilike.${pattern}`,
       ].join(',');
       countQuery = countQuery.or(searchOr);
       dataQuery = dataQuery.or(searchOr);
@@ -791,8 +789,18 @@ async function createOutput(contentItemId: string, output_type: string, output_d
   }
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 45000) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ac.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function urlToInlineData(url: string): Promise<{ mimeType: string; data: string }> {
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, 30000);
   if (!res.ok) throw new Error(`Failed to fetch input image: ${url}`);
   const ab = await res.arrayBuffer();
   const contentType = res.headers.get('content-type') || 'image/png';
@@ -811,14 +819,14 @@ async function generateWithNanoBanana(prompt: string, imageUrls: string[]) {
   }
   parts.push({ text: prompt });
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+  const res = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ role: 'user', parts }],
       generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
     }),
-  });
+  }, 60000);
 
   if (!res.ok) {
     const txt = await res.text();
