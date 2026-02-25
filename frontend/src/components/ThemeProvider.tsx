@@ -32,6 +32,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const saved = localStorage.getItem("theme") as Theme | null;
         return saved && ["light", "dark", "system"].includes(saved) ? saved : "system";
     });
+    const [, forceUpdate] = useState(0);
 
     const resolved = resolveTheme(theme);
 
@@ -54,7 +55,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         if (theme !== "system") return;
         const mq = window.matchMedia("(prefers-color-scheme: dark)");
-        const handler = () => setThemeState((prev) => prev); // force re-render
+        const handler = () => forceUpdate(n => n + 1);
         mq.addEventListener("change", handler);
         return () => mq.removeEventListener("change", handler);
     }, [theme]);
