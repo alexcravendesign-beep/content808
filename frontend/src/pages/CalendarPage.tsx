@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, ContentItem } from "@/api/client";
 import { useToast } from "@/components/ui/toast";
 import { ItemFormModal } from "@/components/ItemFormModal";
-import { ChevronLeft, ChevronRight, Plus, CalendarDays, CalendarRange, Clock, List, Package, PanelLeft } from "lucide-react";
+import { Plus, ChevronDown, RefreshCw, Image, Sparkles, Layers } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay
@@ -11,7 +11,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 
 // Calendar sub-components
-import { CalendarSidebar } from "@/components/calendar/CalendarSidebar";
+// CalendarSidebar removed — replaced by inline calendar picker in filter bar
 import { CalendarMonthGrid } from "@/components/calendar/CalendarMonthGrid";
 import { CalendarWeekGrid } from "@/components/calendar/CalendarWeekGrid";
 import { CalendarDayView } from "@/components/calendar/CalendarDayView";
@@ -22,12 +22,61 @@ import { CalendarSkeleton } from "@/components/calendar/CalendarSkeleton";
 
 type ViewMode = "month" | "week" | "day" | "agenda";
 
-const VIEW_CONFIG: { id: ViewMode; label: string; icon: React.ElementType }[] = [
-  { id: "month", label: "Month", icon: CalendarDays },
-  { id: "week", label: "Week", icon: CalendarRange },
-  { id: "day", label: "Day", icon: Clock },
-  { id: "agenda", label: "Agenda", icon: List },
+const ACTION_ITEMS: { id: string; label: string; icon: React.ElementType }[] = [
+  { id: "sync-assets", label: "Sync Assets", icon: RefreshCw },
+  { id: "generate-infographic", label: "Generate Infographic", icon: Image },
+  { id: "generate-gen-hero", label: "Generate Gen Hero", icon: Sparkles },
+  { id: "gen-both", label: "Gen Both", icon: Layers },
 ];
+
+function ActionsDropdown({ onAction }: { onAction: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-[hsl(var(--th-input))] border border-[hsl(var(--th-border))] text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))] hover:text-[hsl(var(--th-text))] transition-all duration-200"
+      >
+        Actions
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-52 py-1 rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] shadow-xl shadow-black/20 z-50 animate-fadeIn">
+          {ACTION_ITEMS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => {
+                onAction(id);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))] hover:text-[hsl(var(--th-text))] transition-colors"
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function parseMonthParam(v: string | null): Date | null {
   if (!v) return null;
@@ -48,7 +97,7 @@ export function CalendarPage() {
   const initialView = (searchParams.get('view') as ViewMode) || 'month';
   const [currentDate, setCurrentDate] = useState(initialDate);
   const [view, setView] = useState<ViewMode>(["month", "week", "day", "agenda"].includes(initialView) ? initialView : "month");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // sidebar removed — calendar picker now in filter bar
   const [dragItem, setDragItem] = useState<ContentItem | null>(null);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [batchState, setBatchState] = useState<{ running: boolean; mode?: 'sync'|'infographic'|'hero'|'both'; total?: number; processed?: number; startedAt?: number }>({ running: false });
@@ -301,14 +350,6 @@ export function CalendarPage() {
             Calendar
           </h1>
           <button
-            onClick={() => setSidebarOpen((v) => !v)}
-            className={`px-2.5 py-1.5 text-xs rounded-lg border transition-all duration-200 flex items-center gap-1.5 ${sidebarOpen ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-200' : 'bg-[hsl(var(--th-input))] border-[hsl(var(--th-border))] text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))]'}`}
-            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-          >
-            <PanelLeft className="h-3.5 w-3.5" />
-            Sidebar
-          </button>
-          <button
             onClick={() => setCurrentDate(new Date())}
             className="px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))] hover:text-[hsl(var(--th-text))] transition-all duration-200 font-medium"
           >
@@ -316,66 +357,14 @@ export function CalendarPage() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {/* View switcher */}
-          <div className="flex rounded-xl border border-[hsl(var(--th-border))] overflow-hidden glass-panel">
-            {VIEW_CONFIG.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setView(id)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-all duration-200 ${view === id
-                  ? "bg-gradient-to-r from-indigo-600/30 to-cyan-600/20 text-white"
-                  : "text-[hsl(var(--th-text-muted))] hover:text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))]"
-                  }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{label}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Date navigation */}
-          <div className="flex items-center gap-1">
-            <button onClick={() => navigateDate(-1)} className="p-2 rounded-lg hover:bg-[hsl(var(--th-surface-hover))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] transition-colors">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="text-sm font-semibold text-[hsl(var(--th-text-secondary))] min-w-[180px] text-center">{getTitle()}</span>
-            <button onClick={() => navigateDate(1)} className="p-2 rounded-lg hover:bg-[hsl(var(--th-surface-hover))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] transition-colors">
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
-          <button
-            onClick={handleSyncVisibleAssets}
-            disabled={batchState.running}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-700/40 to-blue-700/30 text-cyan-200 hover:from-cyan-600/50 hover:to-blue-600/40'}`}
-            title="Sync infographic/product images into outputs for currently visible items"
-          >
-            <Package className="h-3.5 w-3.5" />
-            Sync Assets
-          </button>
-
-          <button
-            onClick={() => handleGenerateVisible('infographic')}
-            disabled={batchState.running}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-emerald-700/30 text-emerald-200 hover:bg-emerald-600/40'}`}
-          >
-            Gen Infographic
-          </button>
-          <button
-            onClick={() => handleGenerateVisible('hero')}
-            disabled={batchState.running}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-fuchsia-700/30 text-fuchsia-200 hover:bg-fuchsia-600/40'}`}
-          >
-            Gen Hero
-          </button>
-          <button
-            onClick={() => handleGenerateVisible('both')}
-            disabled={batchState.running}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${batchState.running ? 'bg-slate-700/40 text-slate-300 cursor-not-allowed' : 'bg-amber-700/30 text-amber-200 hover:bg-amber-600/40'}`}
-          >
-            Gen Both
-          </button>
+        <div className="flex items-center gap-3">
+          {/* Actions Dropdown */}
+          <ActionsDropdown onAction={(id) => {
+            if (id === 'sync-assets') handleSyncVisibleAssets();
+            else if (id === 'generate-infographic') handleGenerateVisible('infographic');
+            else if (id === 'generate-gen-hero') handleGenerateVisible('hero');
+            else if (id === 'gen-both') handleGenerateVisible('both');
+          }} />
 
           {/* New Item */}
           <button
@@ -389,23 +378,21 @@ export function CalendarPage() {
       </div>
 
       {/* ── Filter Bar ── */}
-      <CalendarFilterBar filters={filters} onChange={setFilters} />
+      <CalendarFilterBar
+        filters={filters}
+        onChange={setFilters}
+        view={view}
+        onViewChange={setView}
+        dateTitle={getTitle()}
+        onNavigateDate={navigateDate}
+        currentDate={currentDate}
+        onDateSelect={(date) => setCurrentDate(date)}
+      />
 
       {/* ── Main Content ── */}
-      <div className="flex gap-5">
-        {/* Sliding Sidebar (default closed) */}
-        <div className={`transition-all duration-300 ease-out overflow-hidden ${sidebarOpen ? 'w-64 opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
-          <CalendarSidebar
-            currentDate={currentDate}
-            onDateSelect={(date) => {
-              setCurrentDate(date);
-            }}
-            items={items}
-          />
-        </div>
-
-        {/* Calendar View (grows bigger when sidebar is closed) */}
-        <div className="flex-1 min-w-0">
+      <div className="flex-1">
+        {/* Calendar View */}
+        <div className="min-w-0">
           {loading ? (
             <CalendarSkeleton view={view} />
           ) : (
