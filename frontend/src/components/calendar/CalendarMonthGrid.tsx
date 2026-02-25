@@ -1,5 +1,6 @@
 import { ContentItem } from "@/api/client";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
+import { CreativeBadges } from "@/components/ui/CreativeBadges";
 import {
     format, startOfMonth, startOfWeek, endOfWeek, endOfMonth,
     addDays, isSameMonth, isSameDay, parseISO
@@ -113,14 +114,15 @@ export function CalendarMonthGrid({
                                                 <div className="text-[11px] font-medium text-[hsl(var(--th-text))] truncate">
                                                     {item.product_title || item.brand}
                                                 </div>
-                                                <div className="flex items-center gap-1">
-                                                    {item.platform && (
-                                                        <span className="text-[10px] text-[hsl(var(--th-text-muted))] uppercase">{item.platform}</span>
-                                                    )}
-                                                    {(item as unknown as { item_type?: string }).item_type === 'social_post' && (
-                                                        <span className="inline-flex h-3 w-3 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" title="Social Post" />
-                                                    )}
-                                                </div>
+                                                    <div className="flex items-center gap-1">
+                                                        {item.platform && (
+                                                            <span className="text-[10px] text-[hsl(var(--th-text-muted))] uppercase">{item.platform}</span>
+                                                        )}
+                                                        <CreativeBadges item={item} variant="compact" />
+                                                        {(item as unknown as { item_type?: string }).item_type === 'social_post' && (
+                                                            <span className="inline-flex h-3 w-3 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" title="Social Post" />
+                                                        )}
+                                                    </div>
                                             </div>
                                         </div>
                                     ))}

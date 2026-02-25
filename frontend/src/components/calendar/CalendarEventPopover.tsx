@@ -5,6 +5,7 @@ import { campaignGoalLabel } from "@/lib/formatHelpers";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
 import { User, ExternalLink, ArrowRight, Clock } from "lucide-react";
+import { CreativeBadges } from "@/components/ui/CreativeBadges";
 import { format } from "date-fns";
 
 interface CalendarEventPopoverProps {
@@ -80,12 +81,9 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule }
                 {item.platform && (
                     <div className="flex items-center gap-2 text-xs text-[hsl(var(--th-text-muted))]">
                         <span className="text-[10px] uppercase tracking-wider bg-[hsl(var(--th-input))] px-2 py-0.5 rounded font-medium">{item.platform}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${item.has_hero ? 'bg-fuchsia-500/20 text-fuchsia-300' : 'bg-zinc-700/40 text-zinc-400'}`}>H {item.has_hero ? '✓' : '·'}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${item.has_infographic ? 'bg-emerald-500/20 text-emerald-300' : 'bg-zinc-700/40 text-zinc-400'}`}>I {item.has_infographic ? '✓' : '·'}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${item.has_facebook_approved ? 'bg-emerald-500/20 text-emerald-300' : 'bg-zinc-700/40 text-zinc-400'}`}>F {item.has_facebook_approved ? '✓' : '·'}{item.approved_facebook_posts ? ` ${item.approved_facebook_posts}` : ''}</span>
-                        {item.creative_done && <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-cyan-500/20 text-cyan-300">DONE</span>}
                     </div>
                 )}
+                <CreativeBadges item={item} variant="detail" />
                 {(item.publish_date || item.due_date) && (
                     <div className="flex items-center gap-2 text-xs text-[hsl(var(--th-text-muted))]">
                         <Clock className="h-3.5 w-3.5 text-[hsl(var(--th-text-muted))]" />
