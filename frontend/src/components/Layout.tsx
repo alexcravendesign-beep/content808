@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Calendar, CheckSquare, Settings, Activity,
-  ChevronLeft, ChevronRight, Send, Image, BarChart3, Link2, ListTodo
+  ChevronLeft, ChevronRight, Image
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ThemeToggle } from "@/components/ThemeProvider";
@@ -12,11 +12,12 @@ const navItems = [
   { to: "/calendar", label: "Calendar", icon: Calendar },
   { to: "/approvals", label: "Approvals", icon: CheckSquare },
   { to: "/activity", label: "Activity", icon: Activity },
-  { to: "/social/compose", label: "Compose Post", icon: Send },
-  { to: "/social/queue", label: "Post Queue", icon: ListTodo },
+  // Temporarily hidden tabs (kept in code for future improvements)
+  // { to: "/social/compose", label: "Compose Post", icon: Send },
+  // { to: "/social/queue", label: "Post Queue", icon: ListTodo },
   { to: "/social/media", label: "Media Library", icon: Image },
-  { to: "/social/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/social/accounts", label: "Accounts", icon: Link2 },
+  // { to: "/social/analytics", label: "Analytics", icon: BarChart3 },
+  // { to: "/social/accounts", label: "Accounts", icon: Link2 },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
