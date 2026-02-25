@@ -4,6 +4,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
 import { format, parseISO, isSameDay, isToday as isDateToday, isTomorrow, addDays } from "date-fns";
 import { Calendar, User } from "lucide-react";
+import { CreativeBadges } from "@/components/ui/CreativeBadges";
 
 interface CalendarAgendaViewProps {
     currentDate: Date;
@@ -105,9 +106,7 @@ export function CalendarAgendaView({ items, onItemClick }: CalendarAgendaViewPro
                                                     {item.product_title || item.brand}
                                                 </span>
                                                 <StatusBadge status={item.status} size="sm" />
-                                                <span className={`h-2 w-2 rounded-full ${item.has_hero ? 'bg-fuchsia-400' : 'bg-zinc-600'}`} title={item.has_hero ? 'Hero done' : 'Hero missing'} />
-                                                <span className={`h-2 w-2 rounded-full ${item.has_infographic ? 'bg-emerald-400' : 'bg-zinc-600'}`} title={item.has_infographic ? 'Infographic done' : 'Infographic missing'} />
-                                                <span className={`h-2 w-2 rounded-full ${item.has_facebook_approved ? 'bg-green-400' : 'bg-zinc-600'}`} title={item.has_facebook_approved ? `Facebook approved (${item.approved_facebook_posts || 0})` : 'No approved Facebook posts'} />
+                                                <CreativeBadges item={item} variant="inline" />
                                                 {item.platform && (
                                                     <span className="text-[10px] text-[hsl(var(--th-text-muted))] uppercase tracking-wider shrink-0 bg-[hsl(var(--th-input))] px-1.5 py-0.5 rounded">
                                                         {item.platform}
