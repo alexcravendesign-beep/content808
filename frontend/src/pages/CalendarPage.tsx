@@ -122,24 +122,32 @@ export function CalendarPage() {
   // Calendar notes
   const [notes, setNotes] = useState<CalendarNote[]>([]);
   const [noteModal, setNoteModal] = useState<{ open: boolean; note: CalendarNote | null; date: Date | null }>({ open: false, note: null, date: null });
+  const [weekMeta, setWeekMeta] = useState<Record<string, { label?: string; theme?: string; color?: string }>>(() => {
+    try {
+      const raw = localStorage.getItem('calendarWeekMetaV1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
 
   const fetchItems = useCallback(async () => {
     try {
       setLoading(true);
       let start: Date, end: Date;
       if (view === "month") {
-        start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 });
-        end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 });
+        start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
+        end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
       } else if (view === "week") {
-        start = startOfWeek(currentDate, { weekStartsOn: 0 });
-        end = endOfWeek(currentDate, { weekStartsOn: 0 });
+        start = startOfWeek(currentDate, { weekStartsOn: 1 });
+        end = endOfWeek(currentDate, { weekStartsOn: 1 });
       } else if (view === "day") {
         start = startOfDay(currentDate);
         end = addDays(start, 1);
       } else {
         // agenda — fetch wider range
-        start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 });
-        end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 });
+        start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
+        end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
       }
 
       const params: Record<string, string> = {
@@ -172,6 +180,10 @@ export function CalendarPage() {
   }, [currentDate, view, filters, toast]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
+
+  useEffect(() => {
+    localStorage.setItem('calendarWeekMetaV1', JSON.stringify(weekMeta));
+  }, [weekMeta]);
 
   // Keep URL shareable: /calendar?month=YYYY-MM&view=...
   useEffect(() => {
@@ -213,7 +225,7 @@ export function CalendarPage() {
   const getTitle = () => {
     switch (view) {
       case "month": return format(currentDate, "MMMM yyyy");
-      case "week": return `Week of ${format(startOfWeek(currentDate), "MMM d, yyyy")}`;
+      case "week": return `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d, yyyy")}`;
       case "day": return format(currentDate, "EEEE, MMMM d, yyyy");
       case "agenda": return format(currentDate, "MMMM yyyy");
     }
@@ -412,6 +424,16 @@ export function CalendarPage() {
     }
   };
 
+  const handleWeekMetaChange = (weekKey: string, patch: { label?: string; theme?: string; color?: string }) => {
+    setWeekMeta((prev) => ({
+      ...prev,
+      [weekKey]: {
+        ...prev[weekKey],
+        ...patch,
+      },
+    }));
+  };
+
   return (
     <div className="animate-fadeIn">
       {/* ── Top Bar ── */}
@@ -487,6 +509,8 @@ export function CalendarPage() {
                   onDrop={handleDrop}
                   onItemClick={handleItemClick}
                   onCellClick={handleCellClick}
+                  weekMeta={weekMeta}
+                  onWeekMetaChange={handleWeekMetaChange}
                 />
               )}
               {view === "week" && (

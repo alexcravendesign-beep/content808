@@ -27,7 +27,7 @@ interface CalendarWeekGridProps {
 export function CalendarWeekGrid({
     currentDate, items, dragItem, onDragStart, onDragEnd, onDrop, onItemClick, onCellClick,
 }: CalendarWeekGridProps) {
-    const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
+    const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
     const days: Date[] = [];
     for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
 

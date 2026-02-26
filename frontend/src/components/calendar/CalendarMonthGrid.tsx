@@ -19,6 +19,8 @@ const BRAND_STRIP = (brand?: string) => {
     return "";
 };
 
+const WEEK_COLORS = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#10b981", "#f97316", "#ec4899"];
+
 interface CalendarMonthGridProps {
     currentDate: Date;
     items: ContentItem[];
@@ -28,14 +30,16 @@ interface CalendarMonthGridProps {
     onDrop: (date: Date) => void;
     onItemClick: (item: ContentItem, rect: DOMRect) => void;
     onCellClick: (date: Date) => void;
+    weekMeta?: Record<string, { label?: string; theme?: string; color?: string }>;
+    onWeekMetaChange?: (weekKey: string, patch: { label?: string; theme?: string; color?: string }) => void;
 }
 
 export function CalendarMonthGrid({
-    currentDate, items, dragItem, onDragStart, onDragEnd, onDrop, onItemClick, onCellClick,
+    currentDate, items, dragItem, onDragStart, onDragEnd, onDrop, onItemClick, onCellClick, weekMeta = {}, onWeekMetaChange,
 }: CalendarMonthGridProps) {
     const monthStart = startOfMonth(currentDate);
-    const calStart = startOfWeek(monthStart, { weekStartsOn: 0 });
-    const calEnd = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 });
+    const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+    const calEnd = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
 
     const rows: Date[][] = [];
     let day = calStart;
@@ -57,8 +61,9 @@ export function CalendarMonthGrid({
     return (
         <div className="border border-[hsl(var(--th-border))] rounded-xl overflow-hidden animate-fadeIn">
             {/* Day headers */}
-            <div className="grid grid-cols-7 bg-[hsl(var(--th-surface))]">
-                {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d) => (
+            <div className="grid grid-cols-8 bg-[hsl(var(--th-surface))]">
+                <div className="px-2 py-2.5 text-[10px] font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider text-center border-b border-r border-[hsl(var(--th-border))]">Week</div>
+                {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((d) => (
                     <div key={d} className="px-3 py-2.5 text-[11px] font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider text-center border-b border-[hsl(var(--th-border))]">
                         {d.slice(0, 3)}
                     </div>
@@ -66,61 +71,92 @@ export function CalendarMonthGrid({
             </div>
 
             {/* Grid */}
-            {rows.map((week, wi) => (
-                <div key={wi} className="grid grid-cols-7">
-                    {week.map((day, di) => {
-                        const dayItems = getItemsForDate(day);
-                        const isToday = isSameDay(day, new Date());
-                        const inMonth = isSameMonth(day, currentDate);
-                        return (
-                            <div
-                                key={di}
-                                className={`min-h-[160px] border-b border-r border-[hsl(var(--th-border)/0.4)] p-2 transition-colors duration-150 calendar-cell-hover ${inMonth ? "" : "opacity-30"
-                                    } ${dragItem ? "hover:bg-indigo-500/[0.06]" : ""}`}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={() => onDrop(day)}
-                                onClick={(e) => {
-                                    if ((e.target as HTMLElement).closest("[data-calendar-item]")) return;
-                                    onCellClick(day);
-                                }}
-                            >
-                                {/* Date number */}
-                                <div className="flex items-center justify-between mb-1 px-0.5">
-                                    <span
-                                        className={`text-xs font-medium flex items-center justify-center ${isToday
-                                            ? "h-6 w-6 rounded-full bg-indigo-600 text-white"
-                                            : "text-[hsl(var(--th-text-muted))]"
-                                            }`}
-                                    >
-                                        {format(day, "d")}
-                                    </span>
-                                    {dayItems.length > 3 && (
-                                        <span className="text-[10px] text-[hsl(var(--th-text-muted))] font-medium">
-                                            {dayItems.length}
-                                        </span>
-                                    )}
-                                </div>
+            {rows.map((week, wi) => {
+                const weekKey = format(week[0], "yyyy-MM-dd");
+                const meta = weekMeta[weekKey] || {};
+                const color = meta.color || WEEK_COLORS[wi % WEEK_COLORS.length];
+                const label = meta.label || `Week ${wi + 1}`;
+                const theme = meta.theme || "";
 
-                                {/* Product-first items */}
-                                <div className="space-y-1">
-                                    {dayItems.slice(0, 3).map((item) => (
-                                        <div
-                                            key={item.id}
-                                            data-calendar-item
-                                            draggable
-                                            onDragStart={() => onDragStart(item)}
-                                            onDragEnd={onDragEnd}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect());
-                                            }}
-                                            className={`flex items-center gap-2 px-1.5 py-1 rounded-md border-l-2 ${BRAND_STRIP(item.brand) || STATUS_STRIP[item.status] || "border-l-zinc-500"} bg-[hsl(var(--th-surface-hover))] hover:bg-[hsl(var(--th-input))] cursor-grab active:cursor-grabbing calendar-item transition-colors`}
+                return (
+                    <div key={wi} className="grid grid-cols-8">
+                        <div className="min-h-[160px] border-b border-r border-[hsl(var(--th-border)/0.5)] p-2 bg-[hsl(var(--th-surface))]">
+                            <div className="h-full rounded-lg border px-2 py-2" style={{ borderColor: `${color}66`, background: `${color}14` }}>
+                                <input
+                                    value={label}
+                                    onChange={(e) => onWeekMetaChange?.(weekKey, { label: e.target.value })}
+                                    className="w-full bg-transparent text-[10px] font-semibold text-[hsl(var(--th-text))] outline-none"
+                                    placeholder="Week label"
+                                />
+                                <input
+                                    value={theme}
+                                    onChange={(e) => onWeekMetaChange?.(weekKey, { theme: e.target.value })}
+                                    className="w-full mt-1 bg-transparent text-[10px] text-[hsl(var(--th-text-secondary))] outline-none"
+                                    placeholder="Theme"
+                                />
+                                <input
+                                    type="color"
+                                    value={color}
+                                    onChange={(e) => onWeekMetaChange?.(weekKey, { color: e.target.value })}
+                                    className="mt-2 h-5 w-7 rounded border-0 bg-transparent p-0"
+                                    title="Week color"
+                                />
+                            </div>
+                        </div>
+
+                        {week.map((day, di) => {
+                            const dayItems = getItemsForDate(day);
+                            const isToday = isSameDay(day, new Date());
+                            const inMonth = isSameMonth(day, currentDate);
+                            return (
+                                <div
+                                    key={di}
+                                    className={`min-h-[160px] border-b border-r border-[hsl(var(--th-border)/0.4)] p-2 transition-colors duration-150 calendar-cell-hover ${inMonth ? "" : "opacity-30"
+                                        } ${dragItem ? "hover:bg-indigo-500/[0.06]" : ""}`}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={() => onDrop(day)}
+                                    onClick={(e) => {
+                                        if ((e.target as HTMLElement).closest("[data-calendar-item]")) return;
+                                        onCellClick(day);
+                                    }}
+                                >
+                                    {/* Date number */}
+                                    <div className="flex items-center justify-between mb-1 px-0.5">
+                                        <span
+                                            className={`text-xs font-medium flex items-center justify-center ${isToday
+                                                ? "h-6 w-6 rounded-full bg-indigo-600 text-white"
+                                                : "text-[hsl(var(--th-text-muted))]"
+                                                }`}
                                         >
-                                            <ProductThumbnail item={item} size="sm" />
-                                            <div className="min-w-0 flex-1">
-                                                <div className="text-[11px] font-medium text-[hsl(var(--th-text))] truncate">
-                                                    {item.product_title || item.brand}
-                                                </div>
+                                            {format(day, "d")}
+                                        </span>
+                                        {dayItems.length > 3 && (
+                                            <span className="text-[10px] text-[hsl(var(--th-text-muted))] font-medium">
+                                                {dayItems.length}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Product-first items */}
+                                    <div className="space-y-1">
+                                        {dayItems.slice(0, 3).map((item) => (
+                                            <div
+                                                key={item.id}
+                                                data-calendar-item
+                                                draggable
+                                                onDragStart={() => onDragStart(item)}
+                                                onDragEnd={onDragEnd}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect());
+                                                }}
+                                                className={`flex items-center gap-2 px-1.5 py-1 rounded-md border-l-2 ${BRAND_STRIP(item.brand) || STATUS_STRIP[item.status] || "border-l-zinc-500"} bg-[hsl(var(--th-surface-hover))] hover:bg-[hsl(var(--th-input))] cursor-grab active:cursor-grabbing calendar-item transition-colors`}
+                                            >
+                                                <ProductThumbnail item={item} size="sm" />
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-[11px] font-medium text-[hsl(var(--th-text))] truncate">
+                                                        {item.product_title || item.brand}
+                                                    </div>
                                                     <div className="flex items-center gap-1">
                                                         {item.platform && (
                                                             <span className="text-[10px] text-[hsl(var(--th-text-muted))] uppercase">{item.platform}</span>
@@ -130,26 +166,27 @@ export function CalendarMonthGrid({
                                                             <span className="inline-flex h-3 w-3 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" title="Social Post" />
                                                         )}
                                                     </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                    {dayItems.length > 3 && (
-                                        <button
-                                            className="text-[10px] text-indigo-400 hover:text-indigo-300 px-1.5 font-medium transition-colors"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onCellClick(day);
-                                            }}
-                                        >
-                                            +{dayItems.length - 3} more
-                                        </button>
-                                    )}
+                                        ))}
+                                        {dayItems.length > 3 && (
+                                            <button
+                                                className="text-[10px] text-indigo-400 hover:text-indigo-300 px-1.5 font-medium transition-colors"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onCellClick(day);
+                                                }}
+                                            >
+                                                +{dayItems.length - 3} more
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            ))}
+                            );
+                        })}
+                    </div>
+                );
+            })}
         </div>
     );
 }
