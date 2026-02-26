@@ -79,10 +79,15 @@ export function ApprovalsPage() {
             <div key={item.id} className="bg-[hsl(var(--th-surface))] border border-[hsl(var(--th-border))] rounded-lg p-4 hover:border-[hsl(var(--th-text-muted)/0.5)] transition-colors">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/item/${item.id}`)}>
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-3 mb-1.5">
                     <h3 className="text-sm font-semibold text-[hsl(var(--th-text))]">{item.brand}</h3>
                     {item.platform && <Badge variant="secondary" className="text-[10px]">{item.platform}</Badge>}
                   </div>
+                  {item.product_title && (
+                    <p className="text-xs font-medium text-[hsl(var(--th-text-secondary))] mb-1.5">
+                      Product: <span className="text-[hsl(var(--th-text))]">{item.product_title}</span>
+                    </p>
+                  )}
                   {item.campaign_goal && <p className="text-xs text-[hsl(var(--th-text-secondary))] mb-2">{campaignGoalLabel(item.campaign_goal)}</p>}
                   <div className="flex items-center gap-4 text-[11px] text-[hsl(var(--th-text-muted))]">
                     {item.assignee && (
