@@ -850,27 +850,40 @@ async function uploadGeneratedImage(path: string, buffer: Buffer) {
   return normalizePublicUrl(data.publicUrl);
 }
 
-async function generateHeroImage(itemId: string, productName: string, productImageUrl: string) {
-  const templateUrl = process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
-  const prompt = buildHeroPrompt(productName);
+function pickTemplateUrl(product: Record<string, unknown>, kind: 'hero' | 'infographic') {
+  const brand = String(product?.brand || '').toLowerCase();
+  const defaultUrl = kind === 'infographic'
+    ? (process.env.INFOGRAPHIC_TEMPLATE_URL || process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg')
+    : (process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg');
+
+  if (brand.includes('craven cooling')) {
+    return process.env.CRAVEN_TEMPLATE_URL || defaultUrl;
+  }
+
+  return defaultUrl;
+}
+
+async function generateHeroImage(itemId: string, product: any, productImageUrl: string) {
+  const templateUrl = pickTemplateUrl(product as Record<string, unknown>, 'hero');
+  const prompt = buildHeroPrompt(String(product?.name || 'Product'));
   const image = await generateWithNanoBanana(prompt, [templateUrl, productImageUrl]);
   const url = await uploadGeneratedImage(`heroes/content_item_${itemId}_${Date.now()}.png`, image);
   return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
 }
 
-async function generateHeroOfferImage(itemId: string, productName: string, productImageUrl: string, productPriceRaw: unknown) {
-  const templateUrl = process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
+async function generateHeroOfferImage(itemId: string, product: any, productImageUrl: string, productPriceRaw: unknown) {
+  const templateUrl = pickTemplateUrl(product as Record<string, unknown>, 'hero');
   const priceNum = parsePriceToNumber(productPriceRaw);
   const productPrice = priceNum ? `£${priceNum.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Price on request';
   const financeCopy = buildFinanceCopy(priceNum);
-  const prompt = buildHeroOfferPrompt(productName, productPrice, financeCopy);
+  const prompt = buildHeroOfferPrompt(String(product?.name || 'Product'), productPrice, financeCopy);
   const image = await generateWithNanoBanana(prompt, [productImageUrl, templateUrl]);
   const url = await uploadGeneratedImage(`heroes/offer_content_item_${itemId}_${Date.now()}.png`, image);
   return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview', finance_applied: !!financeCopy, price: productPrice };
 }
 
 async function generateInfographicImage(itemId: string, product: any) {
-  const templateUrl = process.env.INFOGRAPHIC_TEMPLATE_URL || process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg';
+  const templateUrl = pickTemplateUrl(product as Record<string, unknown>, 'infographic');
   const prompt = buildInfographicPrompt(product as Record<string, unknown>);
   const image = await generateWithNanoBanana(prompt, [templateUrl]);
   const safe = String(product.name || 'product').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60);
@@ -904,7 +917,7 @@ async function processGenerateBatchJob(job: Job<GenerateBatchJobData>) {
           ? (product.images.find((u: string) => !/\.webp(\?|$)/i.test(u)) || product.images[0])
           : null;
         if (!img) throw new Error('Product has no source image');
-        const hero = await generateHeroImage(item.id, product.name, img);
+        const hero = await generateHeroImage(item.id, product, img);
         await createOutput(item.id, 'hero_image', {
           url: hero.url,
           prompt: hero.prompt,
@@ -990,7 +1003,7 @@ router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Requ
       : null;
     if (!productImage) return res.status(422).json({ error: 'Product has no source image' });
 
-    const hero = await generateHeroImage(item.id, product.name, productImage);
+    const hero = await generateHeroImage(item.id, product, productImage);
     prompt = hero.prompt;
 
     await createOutput(item.id, 'hero_image', {
@@ -1027,7 +1040,7 @@ router.post('/items/:id/generate-hero-offer', [param('id').isUUID()], async (req
       : null;
     if (!productImage) return res.status(422).json({ error: 'Product has no source image' });
 
-    const hero = await generateHeroOfferImage(item.id, product.name, productImage, (product as any).price);
+    const hero = await generateHeroOfferImage(item.id, product, productImage, (product as any).price);
     prompt = hero.prompt;
 
     await createOutput(item.id, 'hero_image_offer', {
