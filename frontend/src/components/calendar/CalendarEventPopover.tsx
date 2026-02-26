@@ -134,14 +134,14 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule, 
                 <button
                     onClick={() => onGenerateInfographic(item)}
                     disabled={isGenerating}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-600/20 text-cyan-300 text-xs font-medium hover:bg-cyan-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] text-xs font-medium hover:bg-[hsl(var(--th-surface-hover))] dark:bg-cyan-600/20 dark:text-cyan-300 dark:hover:bg-cyan-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isGenerating ? "Generating…" : "Gen Infographic"}
                 </button>
                 <button
                     onClick={() => onGenerateHero(item)}
                     disabled={isGenerating}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600/20 text-violet-300 text-xs font-medium hover:bg-violet-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] text-xs font-medium hover:bg-[hsl(var(--th-surface-hover))] dark:bg-violet-600/20 dark:text-violet-300 dark:hover:bg-violet-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isGenerating ? "Generating…" : "Gen Hero"}
                 </button>
@@ -149,7 +149,7 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule, 
                 <button
                     onClick={() => onGenerateBoth(item)}
                     disabled={isGenerating}
-                    className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600/20 text-amber-300 text-xs font-medium hover:bg-amber-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] text-xs font-medium hover:bg-[hsl(var(--th-surface-hover))] dark:bg-amber-600/20 dark:text-amber-300 dark:hover:bg-amber-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isGenerating ? "Generating both…" : "Generate Both"}
                 </button>
