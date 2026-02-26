@@ -1,25 +1,92 @@
-import { ContentItem } from "@/api/client";
+import { useState, useRef, useEffect } from "react";
+import { ContentItem, CalendarNote } from "@/api/client";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
+import { noteColorClass } from "@/components/calendar/NoteFormModal";
 import { format, isSameDay, parseISO } from "date-fns";
 import { STATUS_BG_LIGHT as STATUS_BG } from "@/lib/statusConfig";
 import { CreativeBadges } from "@/components/ui/CreativeBadges";
+import { StickyNote, Plus, FileText, Lock, Pencil, Trash2 } from "lucide-react";
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6 AM to 11 PM
+
+/** Inline "Add Note / Add Item" popover when clicking an empty slot */
+function SlotActionMenu({ anchorRect, onAddNote, onAddItem, onClose }: {
+    anchorRect: DOMRect;
+    onAddNote: () => void;
+    onAddItem: () => void;
+    onClose: () => void;
+}) {
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+        };
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        document.addEventListener("mousedown", handleClick);
+        document.addEventListener("keydown", handleEsc);
+        return () => {
+            document.removeEventListener("mousedown", handleClick);
+            document.removeEventListener("keydown", handleEsc);
+        };
+    }, [onClose]);
+
+    const top = Math.min(anchorRect.bottom + 4, window.innerHeight - 120);
+    const left = Math.min(anchorRect.left, window.innerWidth - 200);
+
+    return (
+        <div
+            ref={ref}
+            className="fixed z-50 w-48 py-1 rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] shadow-xl shadow-black/20 animate-fadeIn"
+            style={{ top, left }}
+        >
+            <button
+                onClick={() => { onAddNote(); onClose(); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))] hover:text-[hsl(var(--th-text))] transition-colors"
+            >
+                <StickyNote className="h-3.5 w-3.5 text-amber-400" />
+                Add Note
+            </button>
+            <button
+                onClick={() => { onAddItem(); onClose(); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-[hsl(var(--th-text-secondary))] hover:bg-[hsl(var(--th-surface-hover))] hover:text-[hsl(var(--th-text))] transition-colors"
+            >
+                <FileText className="h-3.5 w-3.5 text-indigo-400" />
+                Add Content Item
+            </button>
+        </div>
+    );
+}
 
 interface CalendarDayViewProps {
     currentDate: Date;
     items: ContentItem[];
+    notes?: CalendarNote[];
     onItemClick: (item: ContentItem, rect: DOMRect) => void;
     onSlotClick: (date: Date) => void;
+    onAddNote?: (date: Date) => void;
+    onEditNote?: (note: CalendarNote) => void;
+    onDeleteNote?: (note: CalendarNote) => void;
 }
 
-export function CalendarDayView({ currentDate, items, onItemClick, onSlotClick }: CalendarDayViewProps) {
+export function CalendarDayView({ currentDate, items, notes = [], onItemClick, onSlotClick, onAddNote, onEditNote, onDeleteNote }: CalendarDayViewProps) {
     const isToday = isSameDay(currentDate, new Date());
+    const [slotMenu, setSlotMenu] = useState<{ rect: DOMRect; date: Date } | null>(null);
 
     const dayItems = items.filter((item) => {
         const d = item.publish_date || item.due_date;
         return d && isSameDay(parseISO(d), currentDate);
+    });
+
+    const dayNotes = notes.filter((n) => {
+        try {
+            return isSameDay(parseISO(n.date), currentDate);
+        } catch {
+            return false;
+        }
     });
 
     // Group items by hour
@@ -56,10 +123,82 @@ export function CalendarDayView({ currentDate, items, onItemClick, onSlotClick }
                     </div>
                     <div className="text-xs text-[hsl(var(--th-text-muted))]">{format(currentDate, "MMMM yyyy")}</div>
                 </div>
-                <div className="ml-auto text-xs text-[hsl(var(--th-text-muted))]">
-                    {dayItems.length} item{dayItems.length !== 1 ? "s" : ""}
+                <div className="ml-auto flex items-center gap-3">
+                    <span className="text-xs text-[hsl(var(--th-text-muted))]">
+                        {dayItems.length} item{dayItems.length !== 1 ? "s" : ""}
+                        {dayNotes.length > 0 && ` \u00B7 ${dayNotes.length} note${dayNotes.length !== 1 ? "s" : ""}`}
+                    </span>
+                    {onAddNote && (
+                        <button
+                            onClick={() => onAddNote(currentDate)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors border border-amber-500/20"
+                        >
+                            <Plus className="h-3 w-3" />
+                            Note
+                        </button>
+                    )}
                 </div>
             </div>
+
+            {/* Notes section */}
+            {dayNotes.length > 0 && (
+                <div className="mb-3">
+                    <div className="flex items-center gap-2 mb-2 px-2">
+                        <StickyNote className="h-3.5 w-3.5 text-amber-400" />
+                        <span className="text-[10px] font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider">Notes</span>
+                    </div>
+                    <div className="space-y-2 px-2 mb-4">
+                        {dayNotes.map((note) => (
+                            <div
+                                key={note.id}
+                                className={`group relative rounded-xl border px-4 py-3 transition-all hover:shadow-md ${noteColorClass(note.color)}`}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <StickyNote className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm text-[hsl(var(--th-text))] whitespace-pre-wrap leading-relaxed">
+                                            {note.note}
+                                        </p>
+                                        <div className="flex items-center gap-3 mt-2 text-[10px] text-[hsl(var(--th-text-muted))]">
+                                            <span>{note.created_by}</span>
+                                            {note.visibility === "private" && (
+                                                <span className="flex items-center gap-0.5 text-amber-400">
+                                                    <Lock className="h-2.5 w-2.5" />
+                                                    Private
+                                                </span>
+                                            )}
+                                            {note.color && (
+                                                <span className="capitalize">{note.color}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {/* Edit/delete actions */}
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {onEditNote && (
+                                            <button
+                                                onClick={() => onEditNote(note)}
+                                                className="p-1 rounded hover:bg-white/10 text-[hsl(var(--th-text-muted))] hover:text-[hsl(var(--th-text))] transition-colors"
+                                                title="Edit note"
+                                            >
+                                                <Pencil className="h-3 w-3" />
+                                            </button>
+                                        )}
+                                        {onDeleteNote && (
+                                            <button
+                                                onClick={() => onDeleteNote(note)}
+                                                className="p-1 rounded hover:bg-red-500/10 text-[hsl(var(--th-text-muted))] hover:text-red-400 transition-colors"
+                                                title="Delete note"
+                                            >
+                                                <Trash2 className="h-3 w-3" />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* All day items */}
             {allDay.length > 0 && (
@@ -92,11 +231,16 @@ export function CalendarDayView({ currentDate, items, onItemClick, onSlotClick }
                         <div
                             key={hour}
                             className="flex border-b border-[hsl(var(--th-border)/0.3)] min-h-[56px] group relative"
-                            onClick={() => {
-                                const d = new Date(currentDate);
-                                d.setHours(hour, 0, 0, 0);
-                                onSlotClick(d);
-                            }}
+                                onClick={(e) => {
+                                    const d = new Date(currentDate);
+                                    d.setHours(hour, 0, 0, 0);
+                                    if (onAddNote) {
+                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                        setSlotMenu({ rect, date: d });
+                                    } else {
+                                        onSlotClick(d);
+                                    }
+                                }}
                         >
                             {/* Time label */}
                             <div className="w-16 shrink-0 py-2 px-2 text-right">
@@ -142,7 +286,9 @@ export function CalendarDayView({ currentDate, items, onItemClick, onSlotClick }
                                 {/* Hover hint */}
                                 {hourItems.length === 0 && (
                                     <div className="h-full flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <span className="text-[10px] text-[hsl(var(--th-text-muted))]">Click to add item</span>
+                                        <span className="text-[10px] text-[hsl(var(--th-text-muted))]">
+                                            {onAddNote ? "Click to add note or item" : "Click to add item"}
+                                        </span>
                                     </div>
                                 )}
                             </div>
@@ -160,6 +306,16 @@ export function CalendarDayView({ currentDate, items, onItemClick, onSlotClick }
                     );
                 })}
             </div>
+
+            {/* Slot action menu */}
+            {slotMenu && (
+                <SlotActionMenu
+                    anchorRect={slotMenu.rect}
+                    onAddNote={() => onAddNote?.(slotMenu.date)}
+                    onAddItem={() => onSlotClick(slotMenu.date)}
+                    onClose={() => setSlotMenu(null)}
+                />
+            )}
         </div>
     );
 }

@@ -58,6 +58,18 @@ export const api = {
   rescheduleItem: (id: string, data: { publish_date?: string; due_date?: string }) =>
     request<ContentItem>(`/calendar/${id}/reschedule`, { method: 'PUT', body: data }),
 
+  // Calendar Notes
+  getCalendarNotes: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ notes: CalendarNote[] }>(`/calendar/notes${qs}`);
+  },
+  createCalendarNote: (data: { date: string; note: string; color?: string; visibility?: string }) =>
+    request<CalendarNote>('/calendar/notes', { method: 'POST', body: data }),
+  updateCalendarNote: (id: string, data: Partial<{ note: string; color: string; visibility: string; date: string }>) =>
+    request<CalendarNote>(`/calendar/notes/${id}`, { method: 'PUT', body: data }),
+  deleteCalendarNote: (id: string) =>
+    request<{ message: string }>(`/calendar/notes/${id}`, { method: 'DELETE' }),
+
   getComments: (itemId: string) => request<{ comments: ContentComment[] }>(`/items/${itemId}/comments`),
   addComment: (itemId: string, body: string) =>
     request<ContentComment>(`/items/${itemId}/comments`, { method: 'POST', body: { body } }),
@@ -148,6 +160,17 @@ export interface Stats {
   by_status: Record<string, number>;
   due_soon: number;
   scheduled_today: number;
+}
+
+export interface CalendarNote {
+  id: string;
+  date: string;
+  note: string;
+  color: string | null;
+  visibility: 'private' | 'team';
+  created_by: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Plugin {

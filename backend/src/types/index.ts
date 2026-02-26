@@ -68,6 +68,17 @@ export interface AuditLogEntry {
   created_at: string;
 }
 
+export interface CalendarNote {
+  id: string;
+  date: string;
+  note: string;
+  color: string | null;
+  visibility: 'private' | 'team';
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RequestUser {
   id: string;
   name: string;
