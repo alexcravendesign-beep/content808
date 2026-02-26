@@ -422,7 +422,7 @@ export function MediaLibraryPage() {
                 <FileText className="h-4 w-4 text-blue-400" />
                 Facebook Posts ({facebookPosts.length})
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {facebookPosts.map((post) => (
                   <div key={post.id} className="relative">
                     <FacebookPostCard
@@ -435,14 +435,15 @@ export function MediaLibraryPage() {
                       createdAt={post.created_at}
                       pageName={post.page_name || "Facebook Page"}
                       profilePicture={post.page_profile_picture || undefined}
+                      compact
                     />
                     {/* Quick copy button for post content */}
                     <button
                       onClick={() => copyToClipboard(post.content, `fb-${post.id}`)}
-                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/40 backdrop-blur-sm text-white/80 hover:text-white hover:bg-black/60 transition-all"
+                      className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/40 backdrop-blur-sm text-white/80 hover:text-white hover:bg-black/60 transition-all"
                       title="Copy post text"
                     >
-                      {copiedId === `fb-${post.id}` ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copiedId === `fb-${post.id}` ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                     </button>
                   </div>
                 ))}
