@@ -108,6 +108,9 @@ router.put('/calendar/notes/:id', async (req: Request, res: Response) => {
     if (!existing) {
       return res.status(404).json({ error: 'Note not found' });
     }
+    if ((existing as Record<string, unknown>).created_by !== userId) {
+      return res.status(403).json({ error: 'Forbidden: you can only modify your own notes' });
+    }
 
     const updateObj: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (note !== undefined) updateObj.note = note.trim();
@@ -158,6 +161,9 @@ router.delete('/calendar/notes/:id', async (req: Request, res: Response) => {
     if (fetchError) throw new Error(fetchError.message);
     if (!existing) {
       return res.status(404).json({ error: 'Note not found' });
+    }
+    if ((existing as Record<string, unknown>).created_by !== userId) {
+      return res.status(403).json({ error: 'Forbidden: you can only delete your own notes' });
     }
 
     const { error } = await supabase
