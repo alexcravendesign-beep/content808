@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/toast";
 import {
   ArrowLeft, Edit, Trash2, ExternalLink, User, Calendar, Send,
   ChevronRight, ChevronDown, Clock, FileText, MessageSquare, Activity, Zap,
-  Package, Sparkles, Wrench
+  Package, Sparkles, Wrench, Copy, Check
 } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
@@ -41,6 +41,8 @@ export function ItemDetailPage() {
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
   const [facebookPosts, setFacebookPosts] = useState<MockFacebookPostRecord[]>([]);
+  const [deletingOutputId, setDeletingOutputId] = useState<string | null>(null);
+  const [copiedUrlId, setCopiedUrlId] = useState<string | null>(null);
   const [genOpen, setGenOpen] = useState(false);
   const genRef = useRef<HTMLDivElement>(null);
 
@@ -120,6 +122,31 @@ export function ItemDetailPage() {
       navigate("/");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Delete failed", "error");
+    }
+  };
+
+  const handleDeleteOutput = async (outputId: string) => {
+    if (!item) return;
+    if (!confirm('Delete this output?')) return;
+    try {
+      setDeletingOutputId(outputId);
+      await api.deleteOutput(item.id, outputId);
+      toast('Output deleted', 'success');
+      fetchItem();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to delete output', 'error');
+    } finally {
+      setDeletingOutputId(null);
+    }
+  };
+
+  const handleCopyUrl = async (outputId: string, url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedUrlId(outputId);
+      setTimeout(() => setCopiedUrlId((prev) => (prev === outputId ? null : prev)), 1200);
+    } catch {
+      toast('Failed to copy URL', 'error');
     }
   };
 
@@ -423,13 +450,29 @@ export function ItemDetailPage() {
                       <Badge variant="secondary">{o.output_type}</Badge>
                       {o.created_by && <span className="text-[11px] text-[hsl(var(--th-text-muted))] italic">{o.created_by}</span>}
                       <span className="text-[11px] text-[hsl(var(--th-text-muted))]">{format(new Date(o.created_at), "MMM d, h:mm a")}</span>
+                      <div className="ml-auto flex items-center gap-1">
+                        {outputUrl && (
+                          <button
+                            onClick={() => handleCopyUrl(o.id, outputUrl)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md bg-[hsl(var(--th-surface-hover))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))]"
+                          >
+                            {copiedUrlId === o.id ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                            {copiedUrlId === o.id ? 'Copied' : 'Copy URL'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteOutput(o.id)}
+                          disabled={deletingOutputId === o.id}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {deletingOutputId === o.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </div>
                     </div>
 
                     {outputUrl ? (
                       <div className="space-y-2">
-                        <a href={outputUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:text-cyan-300 break-all">
-                          {outputUrl}
-                        </a>
                         <img
                           src={outputUrl}
                           alt={`${o.output_type} preview`}

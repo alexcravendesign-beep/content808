@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import {
   ArrowLeft, ChevronRight, FileText, ExternalLink,
-  Activity, Sparkles, User
+  Activity, Sparkles, User, Trash2, Copy, Check
 } from "lucide-react";
 import { format } from "date-fns";
 import { STATUS_BG_SOLID as STATUS_COLORS } from "@/lib/statusConfig";
@@ -35,6 +35,8 @@ export function ContentPage() {
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
   const [facebookPosts, setFacebookPosts] = useState<MockFacebookPostRecord[]>([]);
+  const [deletingOutputId, setDeletingOutputId] = useState<string | null>(null);
+  const [copiedUrlId, setCopiedUrlId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -71,6 +73,31 @@ export function ContentPage() {
   }, [product?.id]);
 
   const visibleOutputs = outputs.filter((o) => !String(o.output_type || "").startsWith("product_"));
+
+  const handleDeleteOutput = async (outputId: string) => {
+    if (!item) return;
+    if (!confirm('Delete this output?')) return;
+    try {
+      setDeletingOutputId(outputId);
+      await api.deleteOutput(item.id, outputId);
+      toast('Output deleted', 'success');
+      fetchData();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to delete output', 'error');
+    } finally {
+      setDeletingOutputId(null);
+    }
+  };
+
+  const handleCopyUrl = async (outputId: string, url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedUrlId(outputId);
+      setTimeout(() => setCopiedUrlId((prev) => (prev === outputId ? null : prev)), 1200);
+    } catch {
+      toast('Failed to copy URL', 'error');
+    }
+  };
 
   if (loading) return <DetailSkeleton />;
   if (!item) return <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Item not found</div>;
@@ -259,13 +286,29 @@ export function ContentPage() {
                   <Badge variant="secondary">{o.output_type}</Badge>
                   {o.created_by && <span className="text-[11px] text-[hsl(var(--th-text-muted))] italic">{o.created_by}</span>}
                   <span className="text-[11px] text-[hsl(var(--th-text-muted))]">{format(new Date(o.created_at), "MMM d, h:mm a")}</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    {outputUrl && (
+                      <button
+                        onClick={() => handleCopyUrl(o.id, outputUrl)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md bg-[hsl(var(--th-surface-hover))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))]"
+                      >
+                        {copiedUrlId === o.id ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedUrlId === o.id ? 'Copied' : 'Copy URL'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteOutput(o.id)}
+                      disabled={deletingOutputId === o.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {deletingOutputId === o.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
                 </div>
 
                 {outputUrl ? (
                   <div className="space-y-2">
-                    <a href={outputUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:text-cyan-300 break-all">
-                      {outputUrl}
-                    </a>
                     <img
                       src={outputUrl}
                       alt={`${o.output_type} preview`}

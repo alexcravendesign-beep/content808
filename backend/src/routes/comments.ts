@@ -142,4 +142,35 @@ router.post(
   }
 );
 
+router.delete('/items/:id/outputs/:outputId', [param('id').isUUID(), param('outputId').isUUID()], async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  try {
+    const { data: existing, error: fetchError } = await supabase
+      .from('content_item_outputs')
+      .select('id,content_item_id')
+      .eq('id', req.params.outputId)
+      .maybeSingle();
+
+    if (fetchError) throw new Error(fetchError.message);
+    if (!existing || existing.content_item_id !== req.params.id) {
+      return res.status(404).json({ error: 'Output not found' });
+    }
+
+    const { error: delError } = await supabase
+      .from('content_item_outputs')
+      .delete()
+      .eq('id', req.params.outputId);
+    if (delError) throw new Error(delError.message);
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error deleting output:', err);
+    res.status(500).json({ error: 'Failed to delete output' });
+  }
+});
+
 export default router;

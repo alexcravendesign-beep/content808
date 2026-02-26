@@ -77,6 +77,8 @@ export const api = {
   getOutputs: (itemId: string) => request<{ outputs: ContentItemOutput[] }>(`/items/${itemId}/outputs`),
   addOutput: (itemId: string, output_type: string, output_data: Record<string, unknown>) =>
     request<ContentItemOutput>(`/items/${itemId}/outputs`, { method: 'POST', body: { output_type, output_data } }),
+  deleteOutput: (itemId: string, outputId: string) =>
+    request<{ ok: boolean }>(`/items/${itemId}/outputs/${outputId}`, { method: 'DELETE' }),
 
   getHistory: (itemId: string) => request<{ history: AuditEntry[] }>(`/items/${itemId}/history`),
   getStats: () => request<Stats>('/stats'),
