@@ -325,7 +325,7 @@ export function MediaLibraryPage() {
               multiple
               accept="image/*,video/*"
               className="hidden"
-              onChange={(e) => e.target.files && handleFiles(e.target.files)}
+              onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ''; }}
             />
             {uploading ? (
               <div className="flex items-center justify-center gap-2">

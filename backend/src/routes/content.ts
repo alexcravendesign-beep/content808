@@ -1200,10 +1200,11 @@ router.get('/products/:id/outputs', [param('id').isUUID()], async (req: Request,
       .from('content_items')
       .select('id')
       .eq('product_id', productId);
-    if (!pidErr && byPid && byPid.length > 0) {
-      itemIds = byPid.map((i: { id: string }) => i.id);
+    if (!pidErr) {
+      // Column exists — use results (even if empty)
+      itemIds = (byPid || []).map((i: { id: string }) => i.id);
     } else {
-      // Fallback: match by product_title = product name
+      // Fallback: column may not exist — match by product_title = product name
       const { data: byTitle, error: titleErr } = await supabase
         .from('content_items')
         .select('id')
