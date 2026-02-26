@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { api, ContentItem } from "@/api/client";
+import { api, ContentItem, CalendarNote } from "@/api/client";
 import { useToast } from "@/components/ui/toast";
 import { ItemFormModal } from "@/components/ItemFormModal";
-import { Plus, ChevronDown, RefreshCw, Image, Sparkles, Layers } from "lucide-react";
+import { Plus, ChevronDown, RefreshCw, Image, Sparkles, Layers, StickyNote } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay
@@ -19,6 +19,7 @@ import { CalendarAgendaView } from "@/components/calendar/CalendarAgendaView";
 import { CalendarEventPopover } from "@/components/calendar/CalendarEventPopover";
 import { CalendarFilterBar } from "@/components/calendar/CalendarFilterBar";
 import { CalendarSkeleton } from "@/components/calendar/CalendarSkeleton";
+import { NoteFormModal } from "@/components/calendar/NoteFormModal";
 
 type ViewMode = "month" | "week" | "day" | "agenda";
 
@@ -118,6 +119,10 @@ export function CalendarPage() {
   // Create modal with pre-filled date
   const [createModal, setCreateModal] = useState<{ open: boolean; date: Date | null }>({ open: false, date: null });
 
+  // Calendar notes
+  const [notes, setNotes] = useState<CalendarNote[]>([]);
+  const [noteModal, setNoteModal] = useState<{ open: boolean; note: CalendarNote | null; date: Date | null }>({ open: false, note: null, date: null });
+
   const fetchItems = useCallback(async () => {
     try {
       setLoading(true);
@@ -148,6 +153,17 @@ export function CalendarPage() {
 
       const data = await api.getCalendar(params);
       setItems(data.items);
+
+      // Fetch notes in parallel for the same date range
+      try {
+        const noteData = await api.getCalendarNotes({
+          from: format(start, 'yyyy-MM-dd'),
+          to: format(end, 'yyyy-MM-dd'),
+        });
+        setNotes(noteData.notes);
+      } catch {
+        // notes table may not exist yet — silently ignore
+      }
     } catch {
       toast("Failed to load calendar", "error");
     } finally {
@@ -268,6 +284,31 @@ export function CalendarPage() {
   const handleCellClick = (date: Date) => {
     setCurrentDate(date);
     setView('day');
+  };
+
+  // ── Note handlers ──
+  const handleAddNote = (date: Date) => {
+    setNoteModal({ open: true, note: null, date });
+  };
+
+  const handleEditNote = (note: CalendarNote) => {
+    setNoteModal({ open: true, note, date: null });
+  };
+
+  const handleDeleteNote = async (note: CalendarNote) => {
+    try {
+      await api.deleteCalendarNote(note.id);
+      setNotes((prev) => prev.filter((n) => n.id !== note.id));
+      toast("Note deleted", "success");
+    } catch {
+      toast("Failed to delete note", "error");
+    }
+  };
+
+  const handleConvertNoteToItem = (note: CalendarNote) => {
+    setNoteModal({ open: false, note: null, date: null });
+    setCreateModal({ open: true, date: new Date(note.date) });
+    // Note remains — user can delete after item is created
   };
 
   const handleSyncVisibleAssets = async () => {
@@ -396,6 +437,15 @@ export function CalendarPage() {
             else if (id === 'gen-both') handleGenerateVisible('both');
           }} />
 
+          {/* New Note */}
+          <button
+            onClick={() => setNoteModal({ open: true, note: null, date: currentDate })}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-400 text-[11px] font-semibold hover:bg-amber-500/20 transition-all duration-200 border border-amber-500/20"
+          >
+            <StickyNote className="h-3.5 w-3.5" />
+            New Note
+          </button>
+
           {/* New Item */}
           <button
             onClick={() => setCreateModal({ open: true, date: currentDate })}
@@ -455,8 +505,12 @@ export function CalendarPage() {
                 <CalendarDayView
                   currentDate={currentDate}
                   items={items}
+                  notes={notes}
                   onItemClick={handleItemClick}
-                  onSlotClick={handleCellClick}
+                  onSlotClick={(date) => setCreateModal({ open: true, date })}
+                  onAddNote={handleAddNote}
+                  onEditNote={handleEditNote}
+                  onDeleteNote={handleDeleteNote}
                 />
               )}
               {view === "agenda" && (
@@ -533,6 +587,16 @@ export function CalendarPage() {
         open={createModal.open}
         onClose={() => setCreateModal({ open: false, date: null })}
         onSaved={fetchItems}
+      />
+
+      {/* ── Note Modal ── */}
+      <NoteFormModal
+        open={noteModal.open}
+        onClose={() => setNoteModal({ open: false, note: null, date: null })}
+        onSaved={fetchItems}
+        note={noteModal.note}
+        defaultDate={noteModal.date}
+        onConvertToItem={handleConvertNoteToItem}
       />
     </div>
   );
