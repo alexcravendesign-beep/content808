@@ -264,9 +264,10 @@ export function CalendarPage() {
     setPopover({ item, rect });
   };
 
-  // Cell/slot click — open create modal
+  // Cell/slot click — focus that date in day view (instead of opening create modal)
   const handleCellClick = (date: Date) => {
-    setCreateModal({ open: true, date });
+    setCurrentDate(date);
+    setView('day');
   };
 
   const handleSyncVisibleAssets = async () => {
