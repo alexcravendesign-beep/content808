@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ContentItem } from "@/api/client";
 import { useToast } from "@/components/ui/toast";
 import { ItemFormModal } from "@/components/ItemFormModal";
@@ -90,6 +90,7 @@ function parseMonthParam(v: string | null): Date | null {
 
 export function CalendarPage() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,6 +102,7 @@ export function CalendarPage() {
   const [dragItem, setDragItem] = useState<ContentItem | null>(null);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [batchState, setBatchState] = useState<{ running: boolean; mode?: 'sync'|'infographic'|'hero'|'both'; total?: number; processed?: number; startedAt?: number }>({ running: false });
+  const [generatingItemId, setGeneratingItemId] = useState<string | null>(null);
 
   // Filters
   const [filters, setFilters] = useState({ brand: "", platform: "", status: "", assignee: "" });
@@ -341,6 +343,33 @@ export function CalendarPage() {
     }
   };
 
+  const handleGenerateFromPopover = async (mode: 'infographic' | 'hero' | 'both', item: ContentItem) => {
+    try {
+      if (generatingItemId) {
+        toast('Another generation is already running', 'error');
+        return;
+      }
+      setGeneratingItemId(item.id);
+
+      if (mode === 'infographic') {
+        await api.generateInfographic(item.id);
+      } else if (mode === 'hero') {
+        await api.generateHero(item.id);
+      } else {
+        await api.generateBoth(item.id);
+      }
+
+      toast(`Generate ${mode} started for ${item.product_title || item.brand}`, 'success');
+      await fetchItems();
+      setPopover(null);
+      navigate(`/item/${item.id}?tab=outputs`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : `Generate ${mode} failed`, 'error');
+    } finally {
+      setGeneratingItemId(null);
+    }
+  };
+
   return (
     <div className="animate-fadeIn">
       {/* ── Top Bar ── */}
@@ -466,6 +495,10 @@ export function CalendarPage() {
             setPopover(null);
             setEditModal({ open: true, item, date: item.publish_date || item.due_date || "" });
           }}
+          onGenerateInfographic={(item) => handleGenerateFromPopover('infographic', item)}
+          onGenerateHero={(item) => handleGenerateFromPopover('hero', item)}
+          onGenerateBoth={(item) => handleGenerateFromPopover('both', item)}
+          isGenerating={generatingItemId === popover.item.id}
         />
       )}
 
