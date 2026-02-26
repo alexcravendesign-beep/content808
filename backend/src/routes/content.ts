@@ -856,7 +856,7 @@ function pickTemplateUrl(product: Record<string, unknown>, kind: 'hero' | 'infog
     ? (process.env.INFOGRAPHIC_TEMPLATE_URL || process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg')
     : (process.env.HERO_TEMPLATE_URL || 'https://supabase.cravencooling.services/storage/v1/object/public/mock-facebook-images/Logos/Image_202602212113.jpeg');
 
-  if (brand.includes('craven cooling')) {
+  if (brand.includes('craven')) {
     return process.env.CRAVEN_TEMPLATE_URL || defaultUrl;
   }
 
@@ -868,7 +868,7 @@ async function generateHeroImage(itemId: string, product: any, productImageUrl: 
   const prompt = buildHeroPrompt(String(product?.name || 'Product'));
   const image = await generateWithNanoBanana(prompt, [templateUrl, productImageUrl]);
   const url = await uploadGeneratedImage(`heroes/content_item_${itemId}_${Date.now()}.png`, image);
-  return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
+  return { url, prompt, template_url: templateUrl, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
 }
 
 async function generateHeroOfferImage(itemId: string, product: any, productImageUrl: string, productPriceRaw: unknown, itemBrand?: string) {
@@ -879,7 +879,7 @@ async function generateHeroOfferImage(itemId: string, product: any, productImage
   const prompt = buildHeroOfferPrompt(String(product?.name || 'Product'), productPrice, financeCopy);
   const image = await generateWithNanoBanana(prompt, [productImageUrl, templateUrl]);
   const url = await uploadGeneratedImage(`heroes/offer_content_item_${itemId}_${Date.now()}.png`, image);
-  return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview', finance_applied: !!financeCopy, price: productPrice };
+  return { url, prompt, template_url: templateUrl, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview', finance_applied: !!financeCopy, price: productPrice };
 }
 
 async function generateInfographicImage(itemId: string, product: any, itemBrand?: string) {
@@ -888,7 +888,7 @@ async function generateInfographicImage(itemId: string, product: any, itemBrand?
   const image = await generateWithNanoBanana(prompt, [templateUrl]);
   const safe = String(product.name || 'product').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60);
   const url = await uploadGeneratedImage(`infographics/${safe}_${itemId}_${Date.now()}.png`, image);
-  return { url, prompt, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
+  return { url, prompt, template_url: templateUrl, model: process.env.NANO_BANANA_MODEL || 'gemini-3-pro-image-preview' };
 }
 
 async function processGenerateBatchJob(job: Job<GenerateBatchJobData>) {
@@ -906,6 +906,7 @@ async function processGenerateBatchJob(job: Job<GenerateBatchJobData>) {
           url: inf.url,
           prompt: inf.prompt,
           model: inf.model,
+          template_url: inf.template_url,
           product_name: product.name,
           mode: 'infographic',
           status: 'completed',
@@ -922,6 +923,7 @@ async function processGenerateBatchJob(job: Job<GenerateBatchJobData>) {
           url: hero.url,
           prompt: hero.prompt,
           model: hero.model,
+          template_url: hero.template_url,
           product_name: product.name,
           mode: 'hero',
           status: 'completed',
@@ -973,6 +975,7 @@ router.post('/items/:id/generate-infographic', [param('id').isUUID()], async (re
       url: out.url,
       prompt: out.prompt,
       model: out.model,
+      template_url: out.template_url,
       product_name: product.name,
       mode: 'infographic',
       status: 'completed',
@@ -1010,6 +1013,7 @@ router.post('/items/:id/generate-hero', [param('id').isUUID()], async (req: Requ
       url: hero.url,
       prompt: hero.prompt,
       model: hero.model,
+      template_url: hero.template_url,
       product_name: product.name,
       mode: 'hero',
       status: 'completed',
@@ -1047,6 +1051,7 @@ router.post('/items/:id/generate-hero-offer', [param('id').isUUID()], async (req
       url: hero.url,
       prompt: hero.prompt,
       model: hero.model,
+      template_url: hero.template_url,
       product_name: product.name,
       price: hero.price,
       finance_applied: hero.finance_applied,
