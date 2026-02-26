@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ThemeToggle } from "@/components/ThemeProvider";
+import cravenLogo from "@/assets/craven-logo.png";
 
 const navItems = [
   { to: "/", label: "Kanban", icon: LayoutDashboard },
@@ -34,12 +35,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
       >
         {/* Brand */}
         <div className="flex items-center gap-3 px-4 h-16 border-b border-[hsl(var(--glass-border))] shrink-0">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 flex items-center justify-center text-sm font-black text-white shrink-0 animate-float">
-            C
+          <div className="h-8 w-8 rounded-lg overflow-hidden shrink-0 bg-white/10 ring-1 ring-[hsl(var(--th-border))] animate-float">
+            <img src={cravenLogo} alt="Craven Logo" className="h-full w-full object-contain" />
           </div>
           {!collapsed && (
             <span className="text-sm font-bold tracking-tight animate-fadeIn whitespace-nowrap">
-              Content Hub
+              Craven Content Hub
             </span>
           )}
         </div>
