@@ -39,16 +39,27 @@ export function MediaLibraryPage() {
   // Load product from URL query param on mount
   useEffect(() => {
     const productId = searchParams.get("product");
+    const productName = searchParams.get("product_name");
     if (productId) {
-      productApi.searchProducts({ limit: 200 })
+      // Direct lookup by ID
+      productApi.getProduct(productId)
+        .then((product) => {
+          setSelectedProduct(product);
+          setProductQuery(product.name);
+        })
+        .catch(() => { /* product not found or invalid ID */ });
+    } else if (productName) {
+      // Lookup by name (fallback when product_id is not available)
+      productApi.searchProducts({ q: productName, limit: 1 })
         .then((res) => {
-          const found = res.items.find((p) => p.id === productId);
+          const found = res.items.find((p) => p.name === productName);
           if (found) {
             setSelectedProduct(found);
             setProductQuery(found.name);
+            setSearchParams({ product: found.id });
           }
         })
-        .catch(() => { /* ignore */ });
+        .catch(() => { /* product not found */ });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

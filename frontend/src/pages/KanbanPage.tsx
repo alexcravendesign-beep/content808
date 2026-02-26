@@ -104,7 +104,15 @@ export function KanbanPage() {
                 borderColor={STATUS_COLORS[status]}
                 bgColor={STATUS_BG[status]}
                 onItemClick={(item) => navigate(`/item/${item.id}`)}
-                onViewOutputs={(item) => navigate(`/social/media?product=${item.product_id || ''}`)}
+                onViewOutputs={(item) => {
+                  if (item.product_id) {
+                    navigate(`/social/media?product=${item.product_id}`);
+                  } else if (item.product_title) {
+                    navigate(`/social/media?product_name=${encodeURIComponent(item.product_title)}`);
+                  } else {
+                    navigate('/social/media');
+                  }
+                }}
               />
             ))}
           </div>
