@@ -1186,7 +1186,12 @@ router.get('/products/:id/outputs', [param('id').isUUID()], async (req: Request,
       .select('id,name')
       .eq('id', productId)
       .single();
-    if (productErr) throw new Error(productErr.message);
+    if (productErr) {
+      if (productErr.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+      throw new Error(productErr.message);
+    }
 
     // Find content items linked to this product.
     // Try product_id column first; fall back to matching by product_title.
