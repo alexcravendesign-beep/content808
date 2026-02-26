@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ContentItem } from "@/api/client";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
 import { CreativeBadges } from "@/components/ui/CreativeBadges";
@@ -32,31 +33,37 @@ function hexToRgba(hex: string, alpha: number): string {
     return `rgba(${r},${g},${b},${alpha})`;
 }
 
-/* ── Inline week-meta popover ── */
+/* ── Inline week-meta popover (rendered via portal to escape overflow-hidden) ── */
 function WeekMetaPopover({
-    weekKey, meta, color, onClose, onChange,
+    weekKey, meta, color, anchorRect, onClose, onChange,
 }: {
     weekKey: string;
     meta: { label?: string; theme?: string; color?: string };
     color: string;
+    anchorRect: DOMRect;
     onClose: () => void;
     onChange: (weekKey: string, patch: { label?: string; theme?: string; color?: string }) => void;
 }) {
     const ref = useRef<HTMLDivElement>(null);
+    const stableOnClose = useCallback(() => onClose(), [onClose]);
 
     useEffect(() => {
         const handler = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+            if (ref.current && !ref.current.contains(e.target as Node)) stableOnClose();
         };
         document.addEventListener("mousedown", handler);
         return () => document.removeEventListener("mousedown", handler);
-    }, [onClose]);
+    }, [stableOnClose]);
 
-    return (
+    /* Position the popover below the badge, clamped to viewport */
+    const top = anchorRect.bottom + 4;
+    const left = anchorRect.left;
+
+    return createPortal(
         <div
             ref={ref}
-            className="absolute left-0 top-full mt-1 z-50 w-52 rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] shadow-xl shadow-black/20 p-3 space-y-2.5 animate-scaleIn"
-            style={{ transformOrigin: "left top" }}
+            className="fixed z-[9999] w-52 rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] shadow-xl shadow-black/20 p-3 space-y-2.5 animate-scaleIn"
+            style={{ top, left, transformOrigin: "left top" }}
         >
             <div>
                 <label className="block text-[10px] font-semibold text-[hsl(var(--th-text-muted))] uppercase tracking-wider mb-1">Label</label>
@@ -88,7 +95,8 @@ function WeekMetaPopover({
                     <span className="text-[10px] text-[hsl(var(--th-text-muted))] font-mono">{color}</span>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
 
@@ -109,6 +117,7 @@ export function CalendarMonthGrid({
     currentDate, items, dragItem, onDragStart, onDragEnd, onDrop, onItemClick, onCellClick, weekMeta = {}, onWeekMetaChange,
 }: CalendarMonthGridProps) {
     const [openPopover, setOpenPopover] = useState<string | null>(null);
+    const [popoverAnchor, setPopoverAnchor] = useState<DOMRect | null>(null);
 
     const monthStart = startOfMonth(currentDate);
     const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -167,7 +176,15 @@ export function CalendarMonthGrid({
                         {/* ── Week label badge ── */}
                         <div className="absolute left-2.5 top-1 z-20">
                             <button
-                                onClick={() => setOpenPopover(openPopover === weekKey ? null : weekKey)}
+                                onClick={(e) => {
+                                    if (openPopover === weekKey) {
+                                        setOpenPopover(null);
+                                        setPopoverAnchor(null);
+                                    } else {
+                                        setOpenPopover(weekKey);
+                                        setPopoverAnchor((e.currentTarget as HTMLElement).getBoundingClientRect());
+                                    }
+                                }}
                                 className="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all duration-200 hover:scale-105 cursor-pointer"
                                 style={{
                                     background: hexToRgba(color, 0.15),
@@ -187,18 +204,19 @@ export function CalendarMonthGrid({
                                     </span>
                                 )}
                             </button>
-
-                            {/* Popover for editing */}
-                            {openPopover === weekKey && onWeekMetaChange && (
-                                <WeekMetaPopover
-                                    weekKey={weekKey}
-                                    meta={meta}
-                                    color={color}
-                                    onClose={() => setOpenPopover(null)}
-                                    onChange={onWeekMetaChange}
-                                />
-                            )}
                         </div>
+
+                        {/* Popover for editing (portal) */}
+                        {openPopover === weekKey && onWeekMetaChange && popoverAnchor && (
+                            <WeekMetaPopover
+                                weekKey={weekKey}
+                                meta={meta}
+                                color={color}
+                                anchorRect={popoverAnchor}
+                                onClose={() => { setOpenPopover(null); setPopoverAnchor(null); }}
+                                onChange={onWeekMetaChange}
+                            />
+                        )}
 
                         {/* ── Day cells grid ── */}
                         <div className="grid grid-cols-7 relative">
