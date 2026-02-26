@@ -3,6 +3,7 @@ import { supabase } from '../db/connection';
 import { body, param, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
 import { logAudit } from '../services/audit';
+import { checkAutoTransition } from '../services/auto-status';
 
 const router = Router();
 
@@ -127,6 +128,12 @@ router.post(
       if (insertError) throw new Error(insertError.message);
 
       const { data } = await supabase.from('content_item_outputs').select('*').eq('id', id).single();
+
+      const outputStatus = (req.body?.output_data?.status as string) || 'completed';
+      if (outputStatus === 'completed') {
+        await checkAutoTransition(req.params.id);
+      }
+
       res.status(201).json(data);
     } catch (err) {
       console.error('Error creating output:', err);

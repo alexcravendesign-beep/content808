@@ -12,21 +12,24 @@ async function getCreativeFlags(itemId: string, productId?: string | null, produ
   let hasHero = false;
   let hasInfographic = false;
   let approvedFbPosts = 0;
+  let anyCompletedOutput = false;
 
-  // 1. Check hero / infographic outputs
+  // 1. Check outputs
   const { data: outputs } = await supabase
     .from('content_item_outputs')
     .select('output_type,output_data')
-    .eq('content_item_id', itemId)
-    .in('output_type', ['hero_image', 'infographic_image']);
+    .eq('content_item_id', itemId);
 
   for (const o of outputs || []) {
     const status = (o as Record<string, unknown>).output_data
       ? ((o as Record<string, unknown>).output_data as Record<string, unknown>).status
       : undefined;
     if (status && status !== 'completed') continue;
-    if ((o as Record<string, unknown>).output_type === 'hero_image') hasHero = true;
-    if ((o as Record<string, unknown>).output_type === 'infographic_image') hasInfographic = true;
+
+    anyCompletedOutput = true;
+    const outputType = (o as Record<string, unknown>).output_type as string;
+    if (outputType === 'hero_image' || outputType === 'hero_image_offer') hasHero = true;
+    if (outputType === 'infographic_image') hasInfographic = true;
   }
 
   // 2. Resolve product ID (same fallback logic as GET /items)
@@ -52,7 +55,7 @@ async function getCreativeFlags(itemId: string, productId?: string | null, produ
     approvedFbPosts = (fbRows || []).length;
   }
 
-  return { hasHero, hasInfographic, approvedFbPosts };
+  return { hasHero, hasInfographic, approvedFbPosts, anyCompletedOutput };
 }
 
 /**
@@ -90,8 +93,8 @@ export async function checkAutoTransition(itemId: string): Promise<void> {
     let newStatus: ContentStatus | null = null;
 
     if (currentStatus === 'idea') {
-      // Any output created → move to draft
-      if (flags.hasHero || flags.hasInfographic) {
+      // Any completed output created → move to draft
+      if (flags.anyCompletedOutput) {
         newStatus = 'draft';
       }
     }
