@@ -103,7 +103,7 @@ export function FacebookPostCard({
           </span>
           <span>{likes}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
           {comments > 0 && <span>{comments} comment{comments !== 1 ? "s" : ""}</span>}
           {shares > 0 && <span>{shares} share{shares !== 1 ? "s" : ""}</span>}
         </div>
@@ -111,13 +111,13 @@ export function FacebookPostCard({
 
       {/* Action Bar */}
       <div className="flex border-t border-gray-200">
-        <button className={`flex-1 flex items-center justify-center gap-1 font-medium text-gray-600 hover:bg-gray-50 transition-colors ${compact ? "py-1.5 text-[10px]" : "py-2 text-xs gap-1.5"}`}>
+        <button className={`flex-1 flex items-center justify-center font-medium text-gray-600 hover:bg-gray-50 transition-colors ${compact ? "gap-1 py-1.5 text-[10px]" : "gap-1.5 py-2 text-xs"}`}>
           <ThumbsUp className={compact ? "h-3 w-3" : "h-4 w-4"} /> Like
         </button>
-        <button className={`flex-1 flex items-center justify-center gap-1 font-medium text-gray-600 hover:bg-gray-50 transition-colors ${compact ? "py-1.5 text-[10px]" : "py-2 text-xs gap-1.5"}`}>
+        <button className={`flex-1 flex items-center justify-center font-medium text-gray-600 hover:bg-gray-50 transition-colors ${compact ? "gap-1 py-1.5 text-[10px]" : "gap-1.5 py-2 text-xs"}`}>
           <MessageCircle className={compact ? "h-3 w-3" : "h-4 w-4"} /> Comment
         </button>
-        <button className={`flex-1 flex items-center justify-center gap-1 font-medium text-gray-600 hover:bg-gray-50 transition-colors ${compact ? "py-1.5 text-[10px]" : "py-2 text-xs gap-1.5"}`}>
+        <button className={`flex-1 flex items-center justify-center font-medium text-gray-600 hover:bg-gray-50 transition-colors ${compact ? "gap-1 py-1.5 text-[10px]" : "gap-1.5 py-2 text-xs"}`}>
           <Share2 className={compact ? "h-3 w-3" : "h-4 w-4"} /> Share
         </button>
       </div>
