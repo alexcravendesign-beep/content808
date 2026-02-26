@@ -119,6 +119,10 @@ export const productApi = {
         return request<ProductSearchResult>(`/products?${qs.toString()}`);
     },
 
+    getProduct: (id: string) => request<Product>(`/products/${id}`),
+
+    getProductByName: (name: string) => request<Product>(`/products/by-name/${encodeURIComponent(name)}`),
+
     getStats: () => request<ProductStats>('/products/stats'),
 
     getCategories: () => request<{ items: CategoryItem[] }>('/categories'),

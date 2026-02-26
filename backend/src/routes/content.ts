@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { Buffer } from 'node:buffer';
+import multer from 'multer';
 import { supabase } from '../db/connection';
 import { body, param, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
@@ -1170,5 +1171,134 @@ router.post(
     }
   }
 );
+
+// ── Product Outputs Hub ──
+
+// GET /products/:id/outputs — aggregate all outputs across content items linked to a product
+router.get('/products/:id/outputs', [param('id').isUUID()], async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const productId = req.params.id;
+
+    // Find the product name so we can match content items by title
+    const { data: productRow, error: productErr } = await supabase
+      .from('products')
+      .select('id,name')
+      .eq('id', productId)
+      .single();
+    if (productErr) {
+      if (productErr.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+      throw new Error(productErr.message);
+    }
+
+    // Find content items linked to this product.
+    // Try product_id column first; fall back to matching by product_title.
+    let itemIds: string[] = [];
+    const { data: byPid, error: pidErr } = await supabase
+      .from('content_items')
+      .select('id')
+      .eq('product_id', productId);
+    if (!pidErr) {
+      // Column exists — use results (even if empty)
+      itemIds = (byPid || []).map((i: { id: string }) => i.id);
+    } else {
+      // Fallback: column may not exist — match by product_title = product name
+      const { data: byTitle, error: titleErr } = await supabase
+        .from('content_items')
+        .select('id')
+        .eq('product_title', productRow.name);
+      if (titleErr) throw new Error(titleErr.message);
+      itemIds = (byTitle || []).map((i: { id: string }) => i.id);
+    }
+
+    let outputs: Array<Record<string, unknown>> = [];
+    if (itemIds.length) {
+      const { data: outputRows, error: outErr } = await supabase
+        .from('content_item_outputs')
+        .select('*')
+        .in('content_item_id', itemIds)
+        .order('created_at', { ascending: false });
+      if (outErr) throw new Error(outErr.message);
+      outputs = outputRows || [];
+    }
+
+    // Also fetch product_assets
+    const { data: assets, error: assetsErr } = await supabase
+      .from('product_assets')
+      .select('*')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false });
+    if (assetsErr && !assetsErr.message.includes('does not exist')) {
+      throw new Error(assetsErr.message);
+    }
+
+    res.json({ outputs, assets: assets || [] });
+  } catch (err) {
+    console.error('Error fetching product outputs:', err);
+    res.status(500).json({ error: 'Failed to fetch product outputs' });
+  }
+});
+
+// POST /products/:id/upload-asset — upload file to Supabase storage
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+router.post('/products/:id/upload-asset', [param('id').isUUID()], upload.single('file'), async (req: Request, res: Response) => {
+  if (!handleValidation(req, res)) return;
+  try {
+    const productId = req.params.id;
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const assetId = uuidv4();
+    const parts = file.originalname.split('.');
+    const ext = parts.length > 1 ? parts.pop()! : 'bin';
+    const storagePath = `product-assets/${productId}/${assetId}.${ext}`;
+
+    // Upload to Supabase storage
+    const { error: upErr } = await supabase.storage
+      .from('mock-facebook-images')
+      .upload(storagePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true,
+      });
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: urlData } = supabase.storage
+      .from('mock-facebook-images')
+      .getPublicUrl(storagePath);
+    const publicUrl = normalizePublicUrl(urlData.publicUrl);
+
+    const label = req.body?.label || file.originalname;
+    const assetType = req.body?.asset_type || 'manual_upload';
+
+    // Insert into product_assets table
+    const { error: insertErr } = await supabase.from('product_assets').insert({
+      id: assetId,
+      product_id: productId,
+      asset_type: assetType,
+      url: publicUrl,
+      label,
+    });
+    // If table doesn't exist yet, still return the URL
+    if (insertErr && !insertErr.message.includes('does not exist')) {
+      throw new Error(insertErr.message);
+    }
+
+    res.status(201).json({
+      id: assetId,
+      product_id: productId,
+      asset_type: assetType,
+      url: publicUrl,
+      label,
+    });
+  } catch (err) {
+    console.error('Error uploading product asset:', err);
+    res.status(500).json({ error: 'Failed to upload product asset' });
+  }
+});
 
 export default router;

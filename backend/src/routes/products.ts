@@ -86,6 +86,57 @@ router.get('/products/stats', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /products/by-name/:name - Get a single product by exact name
+router.get('/products/by-name/:name', async (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('name', name)
+      .limit(1)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+      console.error('Supabase product by-name query error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json(transformImageUrls(data));
+  } catch (err) {
+    console.error('Product by-name fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch product by name' });
+  }
+});
+
+// GET /products/:id - Get a single product by ID (must be after all literal /products/... routes)
+router.get('/products/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+      console.error('Supabase product query error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json(transformImageUrls(data));
+  } catch (err) {
+    console.error('Product fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch product' });
+  }
+});
+
 // GET /categories - Get category counts
 router.get('/categories', async (_req: Request, res: Response) => {
   try {

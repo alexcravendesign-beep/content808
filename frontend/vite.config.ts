@@ -12,9 +12,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/product-api': {
-        target: 'http://192.168.1.137:54100',
+        target: 'http://localhost:4000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/product-api/, ''),
       },
       '/api': {
         target: 'http://localhost:4000',
