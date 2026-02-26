@@ -49,15 +49,12 @@ export function MediaLibraryPage() {
         })
         .catch(() => { /* product not found or invalid ID */ });
     } else if (productName) {
-      // Lookup by name (fallback when product_id is not available)
-      productApi.searchProducts({ q: productName, limit: 1 })
-        .then((res) => {
-          const found = res.items.find((p) => p.name === productName);
-          if (found) {
-            setSelectedProduct(found);
-            setProductQuery(found.name);
-            setSearchParams({ product: found.id });
-          }
+      // Direct lookup by exact name (avoids proxy timeout on search endpoint)
+      productApi.getProductByName(productName)
+        .then((product) => {
+          setSelectedProduct(product);
+          setProductQuery(product.name);
+          setSearchParams({ product: product.id });
         })
         .catch(() => { /* product not found */ });
     }

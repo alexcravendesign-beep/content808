@@ -121,6 +121,8 @@ export const productApi = {
 
     getProduct: (id: string) => request<Product>(`/products/${id}`),
 
+    getProductByName: (name: string) => request<Product>(`/products/by-name/${encodeURIComponent(name)}`),
+
     getStats: () => request<ProductStats>('/products/stats'),
 
     getCategories: () => request<{ items: CategoryItem[] }>('/categories'),
