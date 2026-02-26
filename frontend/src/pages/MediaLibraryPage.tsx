@@ -56,6 +56,7 @@ export function MediaLibraryPage() {
   useEffect(() => {
     if (!productQuery.trim() || !searchOpen) {
       setProductResults([]);
+      setSearching(false);
       return;
     }
     setSearching(true);

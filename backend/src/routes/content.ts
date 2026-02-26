@@ -1180,14 +1180,32 @@ router.get('/products/:id/outputs', [param('id').isUUID()], async (req: Request,
   try {
     const productId = req.params.id;
 
-    // Find all content items linked to this product
-    const { data: items, error: itemsErr } = await supabase
+    // Find the product name so we can match content items by title
+    const { data: productRow, error: productErr } = await supabase
+      .from('products')
+      .select('id,name')
+      .eq('id', productId)
+      .single();
+    if (productErr) throw new Error(productErr.message);
+
+    // Find content items linked to this product.
+    // Try product_id column first; fall back to matching by product_title.
+    let itemIds: string[] = [];
+    const { data: byPid, error: pidErr } = await supabase
       .from('content_items')
       .select('id')
       .eq('product_id', productId);
-    if (itemsErr) throw new Error(itemsErr.message);
-
-    const itemIds = (items || []).map((i: { id: string }) => i.id);
+    if (!pidErr && byPid && byPid.length > 0) {
+      itemIds = byPid.map((i: { id: string }) => i.id);
+    } else {
+      // Fallback: match by product_title = product name
+      const { data: byTitle, error: titleErr } = await supabase
+        .from('content_items')
+        .select('id')
+        .eq('product_title', productRow.name);
+      if (titleErr) throw new Error(titleErr.message);
+      itemIds = (byTitle || []).map((i: { id: string }) => i.id);
+    }
 
     let outputs: Array<Record<string, unknown>> = [];
     if (itemIds.length) {
@@ -1230,7 +1248,8 @@ router.post('/products/:id/upload-asset', [param('id').isUUID()], upload.single(
     }
 
     const assetId = uuidv4();
-    const ext = file.originalname.split('.').pop() || 'bin';
+    const parts = file.originalname.split('.');
+    const ext = parts.length > 1 ? parts.pop()! : 'bin';
     const storagePath = `product-assets/${productId}/${assetId}.${ext}`;
 
     // Upload to Supabase storage
