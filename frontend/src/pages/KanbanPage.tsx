@@ -104,7 +104,7 @@ export function KanbanPage() {
                 borderColor={STATUS_COLORS[status]}
                 bgColor={STATUS_BG[status]}
                 onItemClick={(item) => navigate(`/item/${item.id}`)}
-                onViewOutputs={(item) => navigate(`/item/${item.id}?tab=outputs`)}
+                onViewOutputs={(item) => navigate(`/social/media?product=${item.product_id || ''}`)}
               />
             ))}
           </div>

@@ -87,6 +87,29 @@ export const api = {
 
   getActivity: (limit = 100) => request<{ entries: AuditEntry[] }>(`/audit?limit=${limit}`),
 
+  getProductOutputs: (productId: string) =>
+    request<{ outputs: ContentItemOutput[]; assets: ProductAsset[] }>(`/products/${productId}/outputs`),
+  uploadProductAsset: async (productId: string, file: File, label?: string, assetType?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (label) formData.append('label', label);
+    if (assetType) formData.append('asset_type', assetType);
+    const res = await fetch(`${BASE}/products/${productId}/upload-asset`, {
+      method: 'POST',
+      headers: {
+        'x-user-id': defaultHeaders['x-user-id'],
+        'x-user-name': defaultHeaders['x-user-name'],
+        'x-user-role': defaultHeaders['x-user-role'],
+      },
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `Upload failed: ${res.status}`);
+    }
+    return res.json() as Promise<ProductAsset>;
+  },
+
   agentFill: (id: string) => request<{ jobId: string }>(`/items/${id}/agent-fill`, { method: 'POST' }),
   syncProductAssets: (id: string) => request<{ ok: boolean; created: number; product_name: string }>(`/items/${id}/sync-product-assets`, { method: 'POST' }),
   syncProductAssetsBatch: (item_ids: string[]) => request<{ ok: boolean; processed: number; okCount: number; createdTotal: number }>(`/items/sync-product-assets-batch`, { method: 'POST', body: { item_ids } }),
@@ -141,6 +164,15 @@ export interface ContentItemOutput {
   output_type: string;
   output_data: Record<string, unknown>;
   created_by?: string;
+  created_at: string;
+}
+
+export interface ProductAsset {
+  id: string;
+  product_id: string;
+  asset_type: string;
+  url: string;
+  label: string;
   created_at: string;
 }
 

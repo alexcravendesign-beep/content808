@@ -124,7 +124,7 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule, 
                     <ArrowRight className="h-3 w-3" />
                 </button>
                 <button
-                    onClick={() => navigate(`/item/${item.id}?tab=outputs`)}
+                    onClick={() => navigate(`/social/media?product=${item.product_id || ''}`)}
                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/20 text-emerald-300 text-xs font-medium hover:bg-emerald-600/30 transition-colors"
                 >
                     Outputs
