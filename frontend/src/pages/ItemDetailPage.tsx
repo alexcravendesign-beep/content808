@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { api, ContentItem, ContentComment, AuditEntry, ContentItemOutput } from "@/api/client";
 import { productApi, Product, MockFacebookPostRecord } from "@/api/productApi";
 import { FacebookPostCard } from "@/components/FacebookPostCard";
@@ -9,7 +9,7 @@ import { ItemFormModal } from "@/components/ItemFormModal";
 import { useToast } from "@/components/ui/toast";
 import {
   ArrowLeft, Edit, Trash2, ExternalLink, User, Calendar, Send,
-  ChevronRight, Clock, FileText, MessageSquare, Activity, Zap,
+  ChevronRight, ChevronDown, Clock, FileText, MessageSquare, Activity, Zap,
   Package, Sparkles, Wrench
 } from "lucide-react";
 import { format } from "date-fns";
@@ -41,6 +41,8 @@ export function ItemDetailPage() {
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
   const [facebookPosts, setFacebookPosts] = useState<MockFacebookPostRecord[]>([]);
+  const [genOpen, setGenOpen] = useState(false);
+  const genRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const t = searchParams.get("tab");
@@ -177,6 +179,19 @@ export function ItemDetailPage() {
 
   const visibleOutputs = outputs.filter((o) => !String(o.output_type || '').startsWith('product_'));
 
+  // Close gen dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (genRef.current && !genRef.current.contains(e.target as Node)) {
+        setGenOpen(false);
+      }
+    }
+    if (genOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [genOpen]);
+
   if (loading)return <DetailSkeleton />;
   if (!item) return <div className="flex items-center justify-center h-64 text-[hsl(var(--th-text-muted))]">Item not found</div>;
 
@@ -198,25 +213,40 @@ export function ItemDetailPage() {
             </div>
             {item.campaign_goal && <CampaignGoalDisplay value={item.campaign_goal} />}
           </div>
-          <div className="flex items-center justify-end gap-2 shrink-0 flex-wrap md:max-w-[52%]">
-            {item.status === "idea" && (
-              <button onClick={handleAgentFill} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-indigo-600/20 to-violet-600/20 text-indigo-400 text-xs font-medium hover:from-indigo-600/30 hover:to-violet-600/30 transition-all" title="Generate draft via AI agent">
-                <Sparkles className="h-3.5 w-3.5" />Generate Draft
+          <div className="flex items-center justify-end gap-2 shrink-0">
+            {/* Generate dropdown */}
+            <div className="relative" ref={genRef}>
+              <button
+                onClick={() => setGenOpen(!genOpen)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-indigo-600/20 to-violet-600/20 text-indigo-400 text-xs font-medium hover:from-indigo-600/30 hover:to-violet-600/30 transition-all"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Generate
+                <ChevronDown className={`h-3 w-3 transition-transform ${genOpen ? "rotate-180" : ""}`} />
               </button>
-            )}
-            <button onClick={handleSyncAssets} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-cyan-600/20 to-blue-600/20 text-cyan-300 text-xs font-medium hover:from-cyan-600/30 hover:to-blue-600/30 transition-all whitespace-nowrap" title="Pull infographic/product images into outputs">
-              <Package className="h-3.5 w-3.5" />Sync Assets
-            </button>
-            <button onClick={handleGenerateInfographic} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-emerald-600/20 to-green-600/20 text-emerald-300 text-xs font-medium hover:from-emerald-600/30 hover:to-green-600/30 transition-all whitespace-nowrap" title="Generate infographic output">
-              <Sparkles className="h-3.5 w-3.5" />Infographic
-            </button>
-            <button onClick={handleGenerateHero} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-fuchsia-600/20 to-pink-600/20 text-fuchsia-300 text-xs font-medium hover:from-fuchsia-600/30 hover:to-pink-600/30 transition-all whitespace-nowrap" title="Generate hero output">
-              <Wrench className="h-3.5 w-3.5" />Hero
-            </button>
-            <button onClick={handleGenerateBoth} className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-gradient-to-r from-orange-600/20 to-amber-600/20 text-amber-300 text-xs font-medium hover:from-orange-600/30 hover:to-amber-600/30 transition-all whitespace-nowrap" title="Generate both infographic and hero">
-              <Zap className="h-3.5 w-3.5" />Both
-            </button>
-            <button onClick={() => setEditOpen(true)}className="p-2 rounded-md bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
+              {genOpen && (
+                <div className="absolute right-0 top-full mt-1 w-52 rounded-lg border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] shadow-xl z-50 py-1 animate-in fade-in slide-in-from-top-1">
+                  {item.status === "idea" && (
+                    <button onClick={() => { handleAgentFill(); setGenOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-indigo-400 hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
+                      <Sparkles className="h-3.5 w-3.5" />Generate Draft
+                    </button>
+                  )}
+                  <button onClick={() => { handleSyncAssets(); setGenOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-cyan-300 hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
+                    <Package className="h-3.5 w-3.5" />Sync Assets
+                  </button>
+                  <button onClick={() => { handleGenerateInfographic(); setGenOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-emerald-300 hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
+                    <Sparkles className="h-3.5 w-3.5" />Infographic
+                  </button>
+                  <button onClick={() => { handleGenerateHero(); setGenOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-fuchsia-300 hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
+                    <Wrench className="h-3.5 w-3.5" />Hero
+                  </button>
+                  <button onClick={() => { handleGenerateBoth(); setGenOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-amber-300 hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
+                    <Zap className="h-3.5 w-3.5" />Both
+                  </button>
+                </div>
+              )}
+            </div>
+            <button onClick={() => setEditOpen(true)} className="p-2 rounded-md bg-[hsl(var(--th-input))] text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
               <Edit className="h-4 w-4" />
             </button>
             <button onClick={handleDelete} className="p-2 rounded-md bg-[hsl(var(--th-input))] text-red-400 hover:text-red-300 hover:bg-[hsl(var(--th-surface-hover))] transition-colors">
@@ -232,41 +262,23 @@ export function ItemDetailPage() {
           <InfoField icon={Clock} label="Updated" value={format(new Date(item.updated_at), "MMM d, h:mm a")} />
         </div>
 
-        {item.direction && <DirectionDisplay value={item.direction} />}
-        {item.target_audience && (() => {
-          const parsed = tryParseJson(item.target_audience);
-          const audiences = Array.isArray(parsed) ? parsed : [];
-          if (audiences.length === 0) return null;
-          return (
-            <div className="mb-3">
-              <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Target Audience</label>
-              <div className="flex flex-wrap gap-1.5">
-                {audiences.map((a: string, i: number) => (
-                  <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-400 font-medium">
-                    {a}
-                  </span>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-        {item.pivot_notes && (
-          <div className="mb-3">
-            <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Pivot Notes</label>
-            <p className="text-sm text-[hsl(var(--th-text-secondary))]">{item.pivot_notes}</p>
-          </div>
-        )}
-        {item.final_copy && (
-          <div className="mb-3">
-            <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Draft Copy</label>
-            <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap bg-[hsl(var(--th-input)/0.5)] rounded-lg p-3">{item.final_copy}</p>
-          </div>
-        )}
         {item.product_url && (
-          <a href={item.product_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300">
+          <a href={item.product_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300 mb-3">
             <ExternalLink className="h-3.5 w-3.5" />Product Link
           </a>
         )}
+
+        {/* Link to dedicated content page */}
+        <div className="mt-4 pt-4 border-t border-[hsl(var(--th-border))]">
+          <Link
+            to={`/item/${item.id}/content`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-gradient-to-r from-violet-600/15 to-indigo-600/15 text-violet-400 text-sm font-medium hover:from-violet-600/25 hover:to-indigo-600/25 transition-all"
+          >
+            <FileText className="h-4 w-4" />
+            View Content
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
 
         {item.valid_transitions && item.valid_transitions.length > 0 && (
           <div className="mt-4 pt-4 border-t border-[hsl(var(--th-border))]">
@@ -552,69 +564,6 @@ function CampaignGoalDisplay({ value }: { value: string | Record<string, unknown
       {expanded && content && (
         <p className="text-sm text-[hsl(var(--th-text-muted))] mt-1 ml-5">{content}</p>
       )}
-    </div>
-  );
-}
-
-/** Display direction — handles old string, JSON string, and object formats */
-function DirectionDisplay({ value }: { value: string | Record<string, unknown> | null }) {
-  if (!value) return null;
-
-  // Try to parse JSON strings into objects
-  const parsed = tryParseJson(value);
-
-  // Plain text string (old format or unparseable)
-  if (typeof parsed === 'string') {
-    // Skip displaying "[object Object]" — this is corrupted data
-    if (parsed === '[object Object]') return null;
-    return (
-      <div className="mb-3">
-        <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Direction</label>
-        <p className="text-sm text-[hsl(var(--th-text-secondary))]">{parsed}</p>
-      </div>
-    );
-  }
-
-  if (typeof parsed !== 'object' || parsed === null) return null;
-
-  // New format: { benefits: string[], pain_points: string[] }
-  const obj = parsed as Record<string, unknown>;
-  const benefits = Array.isArray(obj.benefits) ? (obj.benefits as string[]) : [];
-  const painPoints = Array.isArray(obj.pain_points) ? (obj.pain_points as string[]) : [];
-
-  if (benefits.length === 0 && painPoints.length === 0) return null;
-
-  return (
-    <div className="mb-3">
-      <label className="text-xs font-medium text-[hsl(var(--th-text-muted))] mb-1 block">Direction</label>
-      <div className="space-y-2">
-        {benefits.length > 0 && (
-          <div>
-            <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Benefits</span>
-            <ul className="mt-1 space-y-0.5">
-              {benefits.map((b, i) => (
-                <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
-                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  {b}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {painPoints.length > 0 && (
-          <div>
-            <span className="text-xs font-medium text-amber-400 uppercase tracking-wider">Pain Points</span>
-            <ul className="mt-1 space-y-0.5">
-              {painPoints.map((p, i) => (
-                <li key={i} className="text-sm text-[hsl(var(--th-text-secondary))] flex items-start gap-2">
-                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
-                  {p}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
