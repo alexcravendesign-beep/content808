@@ -10,6 +10,13 @@ import { StickyNote, Plus, FileText, Lock, Pencil, Trash2 } from "lucide-react";
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6 AM to 11 PM
 
+const BRAND_STRIP = (brand?: string) => {
+    const b = (brand || "").toLowerCase();
+    if (b.includes("craven cooling")) return "border-l-orange-500";
+    if (b.includes("fridgesmart")) return "border-l-sky-500";
+    return "border-l-[hsl(var(--th-border))]";
+};
+
 /** Inline "Add Note / Add Item" popover when clicking an empty slot */
 function SlotActionMenu({ anchorRect, onAddNote, onAddItem, onClose }: {
     anchorRect: DOMRect;
@@ -128,6 +135,10 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
                         {dayItems.length} item{dayItems.length !== 1 ? "s" : ""}
                         {dayNotes.length > 0 && ` \u00B7 ${dayNotes.length} note${dayNotes.length !== 1 ? "s" : ""}`}
                     </span>
+                    <div className="hidden md:flex items-center gap-3 text-[10px] text-[hsl(var(--th-text-muted))]">
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-orange-500" />Craven Cooling</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-500" />FridgeSmart</span>
+                    </div>
                     {onAddNote && (
                         <button
                             onClick={() => onAddNote(currentDate)}
@@ -258,7 +269,7 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
                                             e.stopPropagation();
                                             onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect());
                                         }}
-                                        className={`${STATUS_BG[item.status] || "bg-[hsl(var(--th-surface-hover))] border-[hsl(var(--th-border))]"} border rounded-lg px-3 py-2 mb-1 cursor-pointer calendar-item`}
+                                        className={`${STATUS_BG[item.status] || "bg-[hsl(var(--th-surface-hover))] border-[hsl(var(--th-border))]"} border-l-4 ${BRAND_STRIP(item.brand)} rounded-lg px-3 py-2 mb-1 cursor-pointer calendar-item`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <ProductThumbnail item={item} size="md" />

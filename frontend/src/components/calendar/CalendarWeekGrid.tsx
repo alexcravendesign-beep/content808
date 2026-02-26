@@ -6,6 +6,13 @@ import {
 import { STATUS_STRIP, STATUS_DOT } from "@/lib/statusConfig";
 import { CreativeBadges } from "@/components/ui/CreativeBadges";
 
+const BRAND_STRIP = (brand?: string) => {
+    const b = (brand || "").toLowerCase();
+    if (b.includes("craven cooling")) return "border-l-orange-500";
+    if (b.includes("fridgesmart")) return "border-l-sky-500";
+    return "";
+};
+
 interface CalendarWeekGridProps {
     currentDate: Date;
     items: ContentItem[];
@@ -72,7 +79,7 @@ export function CalendarWeekGrid({
                                         e.stopPropagation();
                                         onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect());
                                     }}
-                                    className={`border-l-2 ${STATUS_STRIP[item.status] || "border-l-zinc-500"} bg-[hsl(var(--th-surface-hover))] hover:bg-[hsl(var(--th-input))] rounded-lg p-2 cursor-grab active:cursor-grabbing calendar-item transition-colors`}
+                                    className={`border-l-2 ${BRAND_STRIP(item.brand) || STATUS_STRIP[item.status] || "border-l-zinc-500"} bg-[hsl(var(--th-surface-hover))] hover:bg-[hsl(var(--th-input))] rounded-lg p-2 cursor-grab active:cursor-grabbing calendar-item transition-colors`}
                                 >
                                     <div className="flex items-start gap-2 mb-1.5">
                                         <ProductThumbnail item={item} size="md" />

@@ -12,6 +12,13 @@ const STATUS_STRIP: Record<string, string> = {
     publishing: "border-l-amber-400", failed: "border-l-red-500",
 };
 
+const BRAND_STRIP = (brand?: string) => {
+    const b = (brand || "").toLowerCase();
+    if (b.includes("craven cooling")) return "border-l-orange-500";
+    if (b.includes("fridgesmart")) return "border-l-sky-500";
+    return "";
+};
+
 interface CalendarMonthGridProps {
     currentDate: Date;
     items: ContentItem[];
@@ -107,7 +114,7 @@ export function CalendarMonthGrid({
                                                 e.stopPropagation();
                                                 onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect());
                                             }}
-                                            className={`flex items-center gap-2 px-1.5 py-1 rounded-md border-l-2 ${STATUS_STRIP[item.status] || "border-l-zinc-500"} bg-[hsl(var(--th-surface-hover))] hover:bg-[hsl(var(--th-input))] cursor-grab active:cursor-grabbing calendar-item transition-colors`}
+                                            className={`flex items-center gap-2 px-1.5 py-1 rounded-md border-l-2 ${BRAND_STRIP(item.brand) || STATUS_STRIP[item.status] || "border-l-zinc-500"} bg-[hsl(var(--th-surface-hover))] hover:bg-[hsl(var(--th-input))] cursor-grab active:cursor-grabbing calendar-item transition-colors`}
                                         >
                                             <ProductThumbnail item={item} size="sm" />
                                             <div className="min-w-0 flex-1">

@@ -6,6 +6,13 @@ import { format, parseISO, isSameDay, isToday as isDateToday, isTomorrow, addDay
 import { Calendar, User } from "lucide-react";
 import { CreativeBadges } from "@/components/ui/CreativeBadges";
 
+const BRAND_STRIP = (brand?: string) => {
+    const b = (brand || "").toLowerCase();
+    if (b.includes("craven cooling")) return "border-l-orange-500";
+    if (b.includes("fridgesmart")) return "border-l-sky-500";
+    return "border-l-[hsl(var(--th-border))]";
+};
+
 interface CalendarAgendaViewProps {
     currentDate: Date;
     items: ContentItem[];
@@ -85,7 +92,7 @@ export function CalendarAgendaView({ items, onItemClick }: CalendarAgendaViewPro
                                     <div
                                         key={item.id}
                                         onClick={(e) => onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect())}
-                                        className="flex items-center gap-4 px-4 py-3 rounded-xl bg-[hsl(var(--th-surface))] border border-[hsl(var(--th-border))] cursor-pointer hover:border-[hsl(var(--th-text-muted)/0.4)] hover:bg-[hsl(var(--th-surface-hover))] transition-all duration-200 group calendar-item"
+                                        className={`flex items-center gap-4 px-4 py-3 rounded-xl bg-[hsl(var(--th-surface))] border border-l-4 ${BRAND_STRIP(item.brand)} cursor-pointer hover:border-[hsl(var(--th-text-muted)/0.4)] hover:bg-[hsl(var(--th-surface-hover))] transition-all duration-200 group calendar-item`}
                                     >
                                         {/* Time */}
                                         <div className="w-16 text-center shrink-0">
