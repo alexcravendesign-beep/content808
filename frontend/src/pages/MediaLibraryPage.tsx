@@ -435,7 +435,6 @@ export function MediaLibraryPage() {
                       createdAt={post.created_at}
                       pageName={post.page_name || "Facebook Page"}
                       profilePicture={post.page_profile_picture || undefined}
-                      compact
                     />
                     {/* Quick copy button for post content */}
                     <button
