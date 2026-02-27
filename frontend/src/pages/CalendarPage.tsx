@@ -231,6 +231,51 @@ export function CalendarPage() {
     }
   };
 
+  // ── Split bundle into posts ──
+  const handleSplit = async (item: ContentItem) => {
+    try {
+      const result = await api.splitItem(item.id, 3);
+      setItems((prev) => [...prev, ...result.children]);
+      setPopover(null);
+      toast(`Split into ${result.children.length} posts`, 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Split failed', 'error');
+    }
+  };
+
+  // ── Undo split — remove child posts ──
+  const handleUnsplit = async (item: ContentItem) => {
+    try {
+      const result = await api.unsplitItem(item.id);
+      setItems((prev) => prev.filter((i) => !result.deletedChildIds.includes(i.id)));
+      setPopover(null);
+      toast(`Removed ${result.deletedChildIds.length} child posts`, 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Undo split failed', 'error');
+    }
+  };
+
+  // ── Drop to specific hour (day view) ──
+  const handleDropToHour = async (item: ContentItem, date: Date) => {
+    const newDate = date.toISOString(); // preserves the hour in UTC
+    const originalItems = [...items];
+
+    setItems((prev) =>
+      prev.map((i) => i.id === item.id ? { ...i, publish_date: newDate } : i)
+    );
+    setSavingItemId(item.id);
+
+    try {
+      await api.rescheduleItem(item.id, { publish_date: newDate });
+      toast('Scheduled', 'success');
+    } catch {
+      setItems(originalItems);
+      toast('Schedule failed — reverted', 'error');
+    } finally {
+      setSavingItemId(null);
+    }
+  };
+
   // ── Optimistic drag and drop ──
   const handleDrop = async (date: Date) => {
     if (!dragItem) return;
@@ -535,6 +580,7 @@ export function CalendarPage() {
                   onAddNote={handleAddNote}
                   onEditNote={handleEditNote}
                   onDeleteNote={handleDeleteNote}
+                  onDropToHour={handleDropToHour}
                 />
               )}
               {view === "agenda" && (
@@ -577,6 +623,8 @@ export function CalendarPage() {
           onGenerateInfographic={(item) => handleGenerateFromPopover('infographic', item)}
           onGenerateHero={(item) => handleGenerateFromPopover('hero', item)}
           onGenerateBoth={(item) => handleGenerateFromPopover('both', item)}
+          onSplit={handleSplit}
+          onUnsplit={items.some((i) => i.parent_item_id === popover.item.id) ? handleUnsplit : undefined}
           isGenerating={generatingItemId === popover.item.id}
         />
       )}

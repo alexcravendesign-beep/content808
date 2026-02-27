@@ -237,4 +237,163 @@ router.put('/calendar/:id/reschedule', async (req: Request, res: Response) => {
   }
 });
 
+// ── Split bundle into child post units ──
+router.post('/items/:id/split', async (req: Request, res: Response) => {
+  try {
+    const count = Math.min(Math.max(Number(req.body.count) || 3, 1), 10);
+
+    // Fetch parent item
+    const { data: parent, error: fetchError } = await supabase
+      .from('content_items')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
+    if (!parent) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    // Permission: only approved or published items can be split
+    if (!['approved', 'published'].includes(parent.status)) {
+      return res.status(400).json({ error: 'Item must be approved or published to split' });
+    }
+
+    // Permission: cannot split a child item (it must be a parent/root)
+    if (parent.parent_item_id) {
+      return res.status(400).json({ error: 'Cannot split a child item' });
+    }
+
+    // Idempotency: check if this parent already has children
+    const { data: existingChildren, error: childCheckError } = await supabase
+      .from('content_items')
+      .select('id')
+      .eq('parent_item_id', req.params.id);
+    if (childCheckError) throw new Error(childCheckError.message);
+    if (existingChildren && existingChildren.length > 0) {
+      return res.status(409).json({ error: `Already split into ${existingChildren.length} posts` });
+    }
+
+    // ── Fetch approved Facebook posts for this product ──
+    let fbPosts: Array<{ content: string; image: string }> = [];
+    const productTitle = (parent.product_title || '').trim();
+    if (productTitle) {
+      // Look up the product by name to get product_id
+      const { data: productRow } = await supabase
+        .from('products')
+        .select('id')
+        .ilike('name', productTitle)
+        .limit(1)
+        .maybeSingle();
+
+      if (productRow) {
+        const { data: fbRows } = await supabase
+          .from('mock_facebook_posts')
+          .select('content,image')
+          .eq('product_id', productRow.id)
+          .eq('approval_status', 'approved')
+          .order('created_at', { ascending: false })
+          .limit(count);
+        if (fbRows) fbPosts = fbRows as Array<{ content: string; image: string }>;
+      }
+    }
+
+    // Create N child records, enriching each with its matched FB post content/image
+    const childRows = Array.from({ length: count }, (_, i) => {
+      const fb = fbPosts[i]; // may be undefined if fewer FB posts than children
+      return {
+        brand: parent.brand,
+        product_title: `${parent.product_title || parent.brand} — Post ${i + 1}`,
+        product_url: parent.product_url || '',
+        product_image_url: fb?.image || parent.product_image_url || '',
+        final_copy: fb?.content || null,
+        campaign_goal: parent.campaign_goal || null,
+        direction: parent.direction || null,
+        target_audience: parent.target_audience || null,
+        pivot_notes: parent.pivot_notes || '',
+        platform: parent.platform,
+        status: 'draft',
+        publish_date: parent.publish_date,
+        due_date: parent.due_date,
+        assignee: parent.assignee || null,
+        created_by: req.user?.id || 'unknown',
+        parent_item_id: req.params.id,
+      };
+    });
+
+    const { data: children, error: insertError } = await supabase
+      .from('content_items')
+      .insert(childRows)
+      .select('*');
+    if (insertError) throw new Error(insertError.message);
+
+    await logAudit({
+      entityType: 'content_item',
+      entityId: req.params.id,
+      action: 'split',
+      actor: req.user?.id || 'unknown',
+      actorRole: (req.user?.role as 'staff' | 'manager' | 'admin') || 'staff',
+      details: { child_count: count, child_ids: (children || []).map((c: Record<string, unknown>) => c.id) },
+    });
+
+    res.json({ parent, children: children || [] });
+  } catch (err) {
+    console.error('Error splitting item:', err);
+    res.status(500).json({ error: 'Failed to split item' });
+  }
+});
+
+// ── Undo split — delete child posts and restore parent ──
+router.post('/items/:id/unsplit', async (req: Request, res: Response) => {
+  try {
+    // Fetch parent item
+    const { data: parent, error: fetchError } = await supabase
+      .from('content_items')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
+    if (!parent) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    // Must be a parent (not a child)
+    if (parent.parent_item_id) {
+      return res.status(400).json({ error: 'Cannot unsplit a child item — unsplit its parent instead' });
+    }
+
+    // Find children
+    const { data: children, error: childError } = await supabase
+      .from('content_items')
+      .select('id')
+      .eq('parent_item_id', req.params.id);
+    if (childError) throw new Error(childError.message);
+    if (!children || children.length === 0) {
+      return res.status(400).json({ error: 'Item has no child posts to remove' });
+    }
+
+    const childIds = children.map((c: Record<string, unknown>) => c.id as string);
+
+    // Delete all children
+    const { error: deleteError } = await supabase
+      .from('content_items')
+      .delete()
+      .in('id', childIds);
+    if (deleteError) throw new Error(deleteError.message);
+
+    await logAudit({
+      entityType: 'content_item',
+      entityId: req.params.id,
+      action: 'unsplit',
+      actor: req.user?.id || 'unknown',
+      actorRole: (req.user?.role as 'staff' | 'manager' | 'admin') || 'staff',
+      details: { deleted_child_ids: childIds },
+    });
+
+    res.json({ parent, deletedChildIds: childIds });
+  } catch (err) {
+    console.error('Error unsplitting item:', err);
+    res.status(500).json({ error: 'Failed to undo split' });
+  }
+});
+
 export default router;

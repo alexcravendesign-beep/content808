@@ -57,6 +57,10 @@ export const api = {
   },
   rescheduleItem: (id: string, data: { publish_date?: string; due_date?: string }) =>
     request<ContentItem>(`/calendar/${id}/reschedule`, { method: 'PUT', body: data }),
+  splitItem: (id: string, count = 3) =>
+    request<{ parent: ContentItem; children: ContentItem[] }>(`/items/${id}/split`, { method: 'POST', body: { count } }),
+  unsplitItem: (id: string) =>
+    request<{ parent: ContentItem; deletedChildIds: string[] }>(`/items/${id}/unsplit`, { method: 'POST' }),
 
   // Calendar Notes
   getCalendarNotes: (params?: Record<string, string>) => {
@@ -149,6 +153,7 @@ export interface ContentItem {
   creative_done?: boolean;
   has_facebook_approved?: boolean;
   approved_facebook_posts?: number;
+  parent_item_id?: string | null;
 }
 
 export interface ContentComment {

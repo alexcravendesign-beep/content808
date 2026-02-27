@@ -4,7 +4,7 @@ import { ContentItem } from "@/api/client";
 import { campaignGoalLabel } from "@/lib/formatHelpers";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ProductThumbnail } from "@/components/calendar/ProductThumbnail";
-import { User, ExternalLink, ArrowRight, Clock } from "lucide-react";
+import { User, ExternalLink, ArrowRight, Clock, Scissors, Undo2 } from "lucide-react";
 import { CreativeBadges } from "@/components/ui/CreativeBadges";
 import { format } from "date-fns";
 
@@ -16,10 +16,12 @@ interface CalendarEventPopoverProps {
     onGenerateInfographic: (item: ContentItem) => void;
     onGenerateHero: (item: ContentItem) => void;
     onGenerateBoth: (item: ContentItem) => void;
+    onSplit?: (item: ContentItem) => void;
+    onUnsplit?: (item: ContentItem) => void;
     isGenerating?: boolean;
 }
 
-export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule, onGenerateInfographic, onGenerateHero, onGenerateBoth, isGenerating = false }: CalendarEventPopoverProps) {
+export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule, onGenerateInfographic, onGenerateHero, onGenerateBoth, onSplit, onUnsplit, isGenerating = false }: CalendarEventPopoverProps) {
     const navigate = useNavigate();
     const popoverRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -169,6 +171,26 @@ export function CalendarEventPopover({ item, anchorRect, onClose, onReschedule, 
                     <Clock className="h-3 w-3" />
                     Reschedule
                 </button>
+
+                {onSplit && ['approved', 'published'].includes(item.status) && !item.parent_item_id && (
+                    <button
+                        onClick={() => onSplit(item)}
+                        className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600/20 text-purple-300 text-xs font-medium hover:bg-purple-600/30 transition-colors"
+                    >
+                        <Scissors className="h-3 w-3" />
+                        Split to Posts
+                    </button>
+                )}
+
+                {onUnsplit && !item.parent_item_id && (
+                    <button
+                        onClick={() => onUnsplit(item)}
+                        className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-red-600/20 text-red-300 text-xs font-medium hover:bg-red-600/30 transition-colors"
+                    >
+                        <Undo2 className="h-3 w-3" />
+                        Undo Split
+                    </button>
+                )}
             </div>
         </div>
     );
