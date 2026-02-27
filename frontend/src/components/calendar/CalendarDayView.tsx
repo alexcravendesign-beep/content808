@@ -6,7 +6,7 @@ import { noteColorClass } from "@/components/calendar/NoteFormModal";
 import { format, isSameDay, parseISO } from "date-fns";
 import { STATUS_BG_LIGHT as STATUS_BG } from "@/lib/statusConfig";
 import { CreativeBadges } from "@/components/ui/CreativeBadges";
-import { StickyNote, Plus, FileText, Lock, Pencil, Trash2 } from "lucide-react";
+import { StickyNote, Plus, FileText, Lock, Pencil, Trash2, ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6 AM to 11 PM
 
@@ -77,11 +77,15 @@ interface CalendarDayViewProps {
     onAddNote?: (date: Date) => void;
     onEditNote?: (note: CalendarNote) => void;
     onDeleteNote?: (note: CalendarNote) => void;
+    onDropToHour?: (item: ContentItem, date: Date) => void;
 }
 
-export function CalendarDayView({ currentDate, items, notes = [], onItemClick, onSlotClick, onAddNote, onEditNote, onDeleteNote }: CalendarDayViewProps) {
+export function CalendarDayView({ currentDate, items, notes = [], onItemClick, onSlotClick, onAddNote, onEditNote, onDeleteNote, onDropToHour }: CalendarDayViewProps) {
     const isToday = isSameDay(currentDate, new Date());
     const [slotMenu, setSlotMenu] = useState<{ rect: DOMRect; date: Date } | null>(null);
+    const [localDragItem, setLocalDragItem] = useState<ContentItem | null>(null);
+    const [dragOverHour, setDragOverHour] = useState<number | null>(null);
+    const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
 
     const dayItems = items.filter((item) => {
         const d = item.publish_date || item.due_date;
@@ -95,6 +99,15 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
             return false;
         }
     });
+
+    // Build parent->children map
+    const childrenByParent: Record<string, ContentItem[]> = {};
+    for (const item of dayItems) {
+        if (item.parent_item_id) {
+            if (!childrenByParent[item.parent_item_id]) childrenByParent[item.parent_item_id] = [];
+            childrenByParent[item.parent_item_id].push(item);
+        }
+    }
 
     // Group items by hour
     const itemsByHour: Record<number, ContentItem[]> = {};
@@ -115,6 +128,99 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
 
     const nowHour = new Date().getHours();
     const nowMinute = new Date().getMinutes();
+
+    const toggleParentExpanded = (parentId: string) => {
+        setExpandedParents((prev) => {
+            const next = new Set(prev);
+            if (next.has(parentId)) next.delete(parentId);
+            else next.add(parentId);
+            return next;
+        });
+    };
+
+    const handleDragStart = (item: ContentItem) => {
+        setLocalDragItem(item);
+    };
+
+    const handleDragEnd = () => {
+        setLocalDragItem(null);
+        setDragOverHour(null);
+    };
+
+    const handleDropOnHour = (hour: number) => {
+        if (!localDragItem || !onDropToHour) return;
+        // Build a Date in the user's local timezone with the specific hour
+        const d = new Date(currentDate);
+        d.setHours(hour, 0, 0, 0);
+        onDropToHour(localDragItem, d);
+        setLocalDragItem(null);
+        setDragOverHour(null);
+    };
+
+    /** Render a single item card — parent or child */
+    const renderItemCard = (item: ContentItem, isChild: boolean) => {
+        const hasChildren = !!(childrenByParent[item.id] && childrenByParent[item.id].length > 0);
+        const isExpanded = expandedParents.has(item.id);
+
+        return (
+            <div key={item.id}>
+                <div
+                    draggable={isChild}
+                    onDragStart={isChild ? (e) => { e.stopPropagation(); handleDragStart(item); } : undefined}
+                    onDragEnd={isChild ? handleDragEnd : undefined}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect());
+                    }}
+                    className={`${STATUS_BG[item.status] || "bg-[hsl(var(--th-surface-hover))] border-[hsl(var(--th-border))]"} border-l-4 ${BRAND_STRIP(item.brand)} rounded-lg px-3 py-2 mb-1 ${isChild ? "cursor-grab active:cursor-grabbing ml-6" : "cursor-pointer"} calendar-item`}
+                >
+                    <div className="flex items-center gap-3">
+                        {isChild && (
+                            <GripVertical className="h-3.5 w-3.5 text-[hsl(var(--th-text-muted))] shrink-0" />
+                        )}
+                        {hasChildren && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); toggleParentExpanded(item.id); }}
+                                className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors"
+                            >
+                                {isExpanded
+                                    ? <ChevronDown className="h-3.5 w-3.5 text-[hsl(var(--th-text-muted))]" />
+                                    : <ChevronRight className="h-3.5 w-3.5 text-[hsl(var(--th-text-muted))]" />
+                                }
+                            </button>
+                        )}
+                        <ProductThumbnail item={item} size="md" />
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-[hsl(var(--th-text))] truncate">
+                                    {item.product_title || item.brand}
+                                </span>
+                                <StatusBadge status={item.status} size="sm" />
+                                <CreativeBadges item={item} variant="inline" />
+                            </div>
+                            <div className="flex items-center gap-3 mt-0.5 text-[10px] text-[hsl(var(--th-text-muted))]">
+                                <span>{item.brand}</span>
+                                {item.platform && <span className="capitalize">{item.platform}</span>}
+                                {item.assignee && <span>{item.assignee}</span>}
+                                {item.publish_date && (
+                                    <span>{format(new Date(item.publish_date), "h:mm a")}</span>
+                                )}
+                                {isChild && (
+                                    <span className="text-purple-400 font-medium">Child Post</span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {/* Render children below parent when expanded */}
+                {hasChildren && isExpanded && (
+                    <div className="mt-1">
+                        {childrenByParent[item.id].map((child) => renderItemCard(child, true))}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="animate-fadeIn">
@@ -235,13 +341,22 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
             {/* Time grid */}
             <div className="relative">
                 {HOURS.map((hour) => {
-                    const hourItems = (itemsByHour[hour] || []).filter((i) => !allDay.includes(i));
+                    // Get items for this hour, excluding all-day items.
+                    // Hide children that will render under their expanded parent in the same hour.
+                    const hourItems = (itemsByHour[hour] || [])
+                        .filter((i) => !allDay.includes(i))
+                        .filter((i) => {
+                            if (!i.parent_item_id) return true;
+                            const parentInSameHour = (itemsByHour[hour] || []).some((p) => p.id === i.parent_item_id);
+                            return !parentInSameHour;
+                        });
                     const isNowHour = isToday && hour === nowHour;
+                    const isDragOver = dragOverHour === hour && localDragItem !== null;
 
                     return (
                         <div
                             key={hour}
-                            className="flex border-b border-[hsl(var(--th-border)/0.3)] min-h-[56px] group relative"
+                            className={`flex border-b border-[hsl(var(--th-border)/0.3)] min-h-[56px] group relative transition-colors ${isDragOver ? "bg-indigo-500/[0.06]" : ""}`}
                                 onClick={(e) => {
                                     const d = new Date(currentDate);
                                     d.setHours(hour, 0, 0, 0);
@@ -251,6 +366,18 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
                                     } else {
                                         onSlotClick(d);
                                     }
+                                }}
+                                onDragOver={(e) => {
+                                    e.preventDefault();
+                                    setDragOverHour(hour);
+                                }}
+                                onDragLeave={() => {
+                                    if (dragOverHour === hour) setDragOverHour(null);
+                                }}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleDropOnHour(hour);
                                 }}
                         >
                             {/* Time label */}
@@ -262,40 +389,19 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
 
                             {/* Slot */}
                             <div className="flex-1 py-1 px-2 cursor-pointer hover:bg-white/[0.02] transition-colors">
-                                {hourItems.map((item) => (
-                                    <div
-                                        key={item.id}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect());
-                                        }}
-                                        className={`${STATUS_BG[item.status] || "bg-[hsl(var(--th-surface-hover))] border-[hsl(var(--th-border))]"} border-l-4 ${BRAND_STRIP(item.brand)} rounded-lg px-3 py-2 mb-1 cursor-pointer calendar-item`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <ProductThumbnail item={item} size="md" />
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-medium text-[hsl(var(--th-text))] truncate">
-                                                        {item.product_title || item.brand}
-                                                    </span>
-                                                    <StatusBadge status={item.status} size="sm" />
-                                                    <CreativeBadges item={item} variant="inline" />
-                                                </div>
-                                                <div className="flex items-center gap-3 mt-0.5 text-[10px] text-[hsl(var(--th-text-muted))]">
-                                                    <span>{item.brand}</span>
-                                                    {item.platform && <span className="capitalize">{item.platform}</span>}
-                                                    {item.assignee && <span>{item.assignee}</span>}
-                                                    {item.publish_date && (
-                                                        <span>{format(new Date(item.publish_date), "h:mm a")}</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
+                                {hourItems.map((item) => renderItemCard(item, !!item.parent_item_id))}
+
+                                {/* Drop hint */}
+                                {isDragOver && (
+                                    <div className="border-2 border-dashed border-indigo-500/40 rounded-lg px-3 py-2 mb-1 text-center">
+                                        <span className="text-[10px] text-indigo-400 font-medium">
+                                            Drop here to schedule at {format(new Date(2000, 0, 1, hour), "h a")}
+                                        </span>
                                     </div>
-                                ))}
+                                )}
 
                                 {/* Hover hint */}
-                                {hourItems.length === 0 && (
+                                {hourItems.length === 0 && !isDragOver && (
                                     <div className="h-full flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
                                         <span className="text-[10px] text-[hsl(var(--th-text-muted))]">
                                             {onAddNote ? "Click to add note or item" : "Click to add item"}

@@ -237,4 +237,82 @@ router.put('/calendar/:id/reschedule', async (req: Request, res: Response) => {
   }
 });
 
+// ── Split bundle into child post units ──
+router.post('/items/:id/split', async (req: Request, res: Response) => {
+  try {
+    const count = Math.min(Math.max(Number(req.body.count) || 3, 1), 10);
+
+    // Fetch parent item
+    const { data: parent, error: fetchError } = await supabase
+      .from('content_items')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
+    if (!parent) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    // Permission: only approved or published items can be split
+    if (!['approved', 'published'].includes(parent.status)) {
+      return res.status(400).json({ error: 'Item must be approved or published to split' });
+    }
+
+    // Permission: cannot split a child item (it must be a parent/root)
+    if (parent.parent_item_id) {
+      return res.status(400).json({ error: 'Cannot split a child item' });
+    }
+
+    // Idempotency: check if this parent already has children
+    const { data: existingChildren, error: childCheckError } = await supabase
+      .from('content_items')
+      .select('id')
+      .eq('parent_item_id', req.params.id);
+    if (childCheckError) throw new Error(childCheckError.message);
+    if (existingChildren && existingChildren.length > 0) {
+      return res.status(409).json({ error: `Already split into ${existingChildren.length} posts` });
+    }
+
+    // Create N child records
+    const childRows = Array.from({ length: count }, (_, i) => ({
+      brand: parent.brand,
+      product_title: `${parent.product_title || parent.brand} — Post ${i + 1}`,
+      product_url: parent.product_url || '',
+      product_image_url: parent.product_image_url || '',
+      product_id: parent.product_id || null,
+      campaign_goal: parent.campaign_goal || null,
+      direction: parent.direction || null,
+      target_audience: parent.target_audience || null,
+      pivot_notes: parent.pivot_notes || '',
+      platform: parent.platform,
+      status: 'draft',
+      publish_date: parent.publish_date,
+      due_date: parent.due_date,
+      assignee: parent.assignee || null,
+      created_by: req.user?.id || 'unknown',
+      parent_item_id: req.params.id,
+    }));
+
+    const { data: children, error: insertError } = await supabase
+      .from('content_items')
+      .insert(childRows)
+      .select('*');
+    if (insertError) throw new Error(insertError.message);
+
+    await logAudit({
+      entityType: 'content_item',
+      entityId: req.params.id,
+      action: 'split',
+      actor: req.user?.id || 'unknown',
+      actorRole: (req.user?.role as 'staff' | 'manager' | 'admin') || 'staff',
+      details: { child_count: count, child_ids: (children || []).map((c: Record<string, unknown>) => c.id) },
+    });
+
+    res.json({ parent, children: children || [] });
+  } catch (err) {
+    console.error('Error splitting item:', err);
+    res.status(500).json({ error: 'Failed to split item' });
+  }
+});
+
 export default router;
