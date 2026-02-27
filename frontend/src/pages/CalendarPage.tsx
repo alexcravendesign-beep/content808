@@ -243,6 +243,18 @@ export function CalendarPage() {
     }
   };
 
+  // ── Undo split — remove child posts ──
+  const handleUnsplit = async (item: ContentItem) => {
+    try {
+      const result = await api.unsplitItem(item.id);
+      setItems((prev) => prev.filter((i) => !result.deletedChildIds.includes(i.id)));
+      setPopover(null);
+      toast(`Removed ${result.deletedChildIds.length} child posts`, 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Undo split failed', 'error');
+    }
+  };
+
   // ── Drop to specific hour (day view) ──
   const handleDropToHour = async (item: ContentItem, date: Date) => {
     const newDate = date.toISOString(); // preserves the hour in UTC
@@ -612,6 +624,7 @@ export function CalendarPage() {
           onGenerateHero={(item) => handleGenerateFromPopover('hero', item)}
           onGenerateBoth={(item) => handleGenerateFromPopover('both', item)}
           onSplit={handleSplit}
+          onUnsplit={items.some((i) => i.parent_item_id === popover.item.id) ? handleUnsplit : undefined}
           isGenerating={generatingItemId === popover.item.id}
         />
       )}

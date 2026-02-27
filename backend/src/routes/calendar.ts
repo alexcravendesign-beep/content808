@@ -315,4 +315,58 @@ router.post('/items/:id/split', async (req: Request, res: Response) => {
   }
 });
 
+// ── Undo split — delete child posts and restore parent ──
+router.post('/items/:id/unsplit', async (req: Request, res: Response) => {
+  try {
+    // Fetch parent item
+    const { data: parent, error: fetchError } = await supabase
+      .from('content_items')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
+    if (!parent) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    // Must be a parent (not a child)
+    if (parent.parent_item_id) {
+      return res.status(400).json({ error: 'Cannot unsplit a child item — unsplit its parent instead' });
+    }
+
+    // Find children
+    const { data: children, error: childError } = await supabase
+      .from('content_items')
+      .select('id')
+      .eq('parent_item_id', req.params.id);
+    if (childError) throw new Error(childError.message);
+    if (!children || children.length === 0) {
+      return res.status(400).json({ error: 'Item has no child posts to remove' });
+    }
+
+    const childIds = children.map((c: Record<string, unknown>) => c.id as string);
+
+    // Delete all children
+    const { error: deleteError } = await supabase
+      .from('content_items')
+      .delete()
+      .in('id', childIds);
+    if (deleteError) throw new Error(deleteError.message);
+
+    await logAudit({
+      entityType: 'content_item',
+      entityId: req.params.id,
+      action: 'unsplit',
+      actor: req.user?.id || 'unknown',
+      actorRole: (req.user?.role as 'staff' | 'manager' | 'admin') || 'staff',
+      details: { deleted_child_ids: childIds },
+    });
+
+    res.json({ parent, deletedChildIds: childIds });
+  } catch (err) {
+    console.error('Error unsplitting item:', err);
+    res.status(500).json({ error: 'Failed to undo split' });
+  }
+});
+
 export default router;
