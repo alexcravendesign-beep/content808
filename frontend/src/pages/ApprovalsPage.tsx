@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ContentItem } from "@/api/client";
+import { productApi, MockFacebookPostRecord } from "@/api/productApi";
 import { campaignGoalLabel } from "@/lib/formatHelpers";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { CheckCircle, XCircle, Clock, User, ExternalLink } from "lucide-react";
+import { FacebookPostCard } from "@/components/FacebookPostCard";
+import { CheckCircle, XCircle, Clock, User, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { ListSkeleton } from "@/components/Skeletons";
 
@@ -16,6 +18,8 @@ export function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [blockModal, setBlockModal] = useState<{ open: boolean; item: ContentItem | null }>({ open: false, item: null });
   const [blockReason, setBlockReason] = useState("");
+  const [fbPostsMap, setFbPostsMap] = useState<Record<string, MockFacebookPostRecord[]>>({});
+  const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set());
 
   const fetchApprovals = useCallback(async () => {
     try {
@@ -29,6 +33,37 @@ export function ApprovalsPage() {
   }, [toast]);
 
   useEffect(() => { fetchApprovals(); }, [fetchApprovals]);
+
+  // Fetch Facebook posts for each approval item that has a product_title
+  useEffect(() => {
+    if (items.length === 0) return;
+    const fetchFbPosts = async () => {
+      const newMap: Record<string, MockFacebookPostRecord[]> = {};
+      await Promise.all(
+        items.map(async (item) => {
+          if (!item.product_title) return;
+          try {
+            const product = await productApi.getProductByName(item.product_title);
+            const posts = await productApi.getFacebookPosts(product.id);
+            if (posts.length > 0) newMap[item.id] = posts;
+          } catch {
+            // Product not found or no posts – skip silently
+          }
+        })
+      );
+      setFbPostsMap(newMap);
+    };
+    fetchFbPosts();
+  }, [items]);
+
+  const togglePostsExpanded = (itemId: string) => {
+    setExpandedPosts((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
 
   const handleApprove = async (id: string) => {
     try {
@@ -121,6 +156,40 @@ export function ApprovalsPage() {
                   </button>
                 </div>
               </div>
+              {/* Facebook Posts section */}
+              {fbPostsMap[item.id] && fbPostsMap[item.id].length > 0 && (
+                <div className="mt-3 border-t border-[hsl(var(--th-border))] pt-3">
+                  <button
+                    onClick={() => togglePostsExpanded(item.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--th-text-secondary))] hover:text-[hsl(var(--th-text))] transition-colors mb-2"
+                  >
+                    {expandedPosts.has(item.id)
+                      ? <ChevronDown className="h-3.5 w-3.5" />
+                      : <ChevronRight className="h-3.5 w-3.5" />
+                    }
+                    Facebook Posts ({fbPostsMap[item.id].length})
+                  </button>
+                  {expandedPosts.has(item.id) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {fbPostsMap[item.id].map((post) => (
+                        <FacebookPostCard
+                          key={post.id}
+                          content={post.content}
+                          image={post.image}
+                          likes={post.likes}
+                          comments={post.comments}
+                          shares={post.shares}
+                          approvalStatus={post.approval_status}
+                          createdAt={post.created_at}
+                          pageName={post.page_name || "Unknown Page"}
+                          profilePicture={post.page_profile_picture || undefined}
+                          compact
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
