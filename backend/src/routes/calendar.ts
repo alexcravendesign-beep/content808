@@ -273,24 +273,52 @@ router.post('/items/:id/split', async (req: Request, res: Response) => {
       return res.status(409).json({ error: `Already split into ${existingChildren.length} posts` });
     }
 
-    // Create N child records
-    const childRows = Array.from({ length: count }, (_, i) => ({
-      brand: parent.brand,
-      product_title: `${parent.product_title || parent.brand} — Post ${i + 1}`,
-      product_url: parent.product_url || '',
-      product_image_url: parent.product_image_url || '',
-      campaign_goal: parent.campaign_goal || null,
-      direction: parent.direction || null,
-      target_audience: parent.target_audience || null,
-      pivot_notes: parent.pivot_notes || '',
-      platform: parent.platform,
-      status: 'draft',
-      publish_date: parent.publish_date,
-      due_date: parent.due_date,
-      assignee: parent.assignee || null,
-      created_by: req.user?.id || 'unknown',
-      parent_item_id: req.params.id,
-    }));
+    // ── Fetch approved Facebook posts for this product ──
+    let fbPosts: Array<{ content: string; image: string }> = [];
+    const productTitle = (parent.product_title || '').trim();
+    if (productTitle) {
+      // Look up the product by name to get product_id
+      const { data: productRow } = await supabase
+        .from('products')
+        .select('id')
+        .ilike('name', productTitle)
+        .limit(1)
+        .maybeSingle();
+
+      if (productRow) {
+        const { data: fbRows } = await supabase
+          .from('mock_facebook_posts')
+          .select('content,image')
+          .eq('product_id', productRow.id)
+          .eq('approval_status', 'approved')
+          .order('created_at', { ascending: false })
+          .limit(count);
+        if (fbRows) fbPosts = fbRows as Array<{ content: string; image: string }>;
+      }
+    }
+
+    // Create N child records, enriching each with its matched FB post content/image
+    const childRows = Array.from({ length: count }, (_, i) => {
+      const fb = fbPosts[i]; // may be undefined if fewer FB posts than children
+      return {
+        brand: parent.brand,
+        product_title: `${parent.product_title || parent.brand} — Post ${i + 1}`,
+        product_url: parent.product_url || '',
+        product_image_url: fb?.image || parent.product_image_url || '',
+        final_copy: fb?.content || null,
+        campaign_goal: parent.campaign_goal || null,
+        direction: parent.direction || null,
+        target_audience: parent.target_audience || null,
+        pivot_notes: parent.pivot_notes || '',
+        platform: parent.platform,
+        status: 'draft',
+        publish_date: parent.publish_date,
+        due_date: parent.due_date,
+        assignee: parent.assignee || null,
+        created_by: req.user?.id || 'unknown',
+        parent_item_id: req.params.id,
+      };
+    });
 
     const { data: children, error: insertError } = await supabase
       .from('content_items')

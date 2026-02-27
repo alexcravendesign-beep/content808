@@ -193,14 +193,14 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
                     }}
                     className={`${STATUS_BG[item.status] || "bg-[hsl(var(--th-surface-hover))] border-[hsl(var(--th-border))]"} border-l-4 ${BRAND_STRIP(item.brand)} rounded-lg px-3 py-2 mb-1 ${isChild ? "cursor-grab active:cursor-grabbing ml-6" : "cursor-pointer"} calendar-item`}
                 >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-start gap-3">
                         {isChild && (
-                            <GripVertical className="h-3.5 w-3.5 text-[hsl(var(--th-text-muted))] shrink-0" />
+                            <GripVertical className="h-3.5 w-3.5 mt-1 text-[hsl(var(--th-text-muted))] shrink-0" />
                         )}
                         {hasChildren && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); toggleParentExpanded(item.id); }}
-                                className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors"
+                                className="shrink-0 p-0.5 mt-0.5 rounded hover:bg-white/10 transition-colors"
                             >
                                 {isExpanded
                                     ? <ChevronDown className="h-3.5 w-3.5 text-[hsl(var(--th-text-muted))]" />
@@ -228,6 +228,12 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
                                     <span className="text-purple-400 font-medium">Child Post</span>
                                 )}
                             </div>
+                            {/* Show FB post content snippet on child cards */}
+                            {isChild && item.final_copy && (
+                                <p className="mt-1.5 text-[11px] leading-relaxed text-[hsl(var(--th-text-secondary))] line-clamp-2">
+                                    {item.final_copy}
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
