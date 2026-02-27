@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { api, ContentItem, ContentItemOutput } from "@/api/client";
 import { productApi, Product, MockFacebookPostRecord } from "@/api/productApi";
-import { FacebookPostCard } from "@/components/FacebookPostCard";
+// FacebookPostCard replaced by inline review panel
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import {
   ArrowLeft, ChevronRight, FileText, ExternalLink,
-  Activity, Sparkles, User, Trash2, Copy, Check
+  Activity, Sparkles, User, Trash2, Copy, Check,
+  ThumbsUp, ThumbsDown, Clock, CheckCircle, XCircle
 } from "lucide-react";
 import { format } from "date-fns";
 import { STATUS_BG_SOLID as STATUS_COLORS } from "@/lib/statusConfig";
@@ -64,13 +65,30 @@ export function ContentPage() {
       .catch(() => setProduct(null));
   }, [item?.product_title]);
 
-  // Fetch Facebook posts linked to this product
-  useEffect(() => {
+  const [approvingPostId, setApprovingPostId] = useState<string | null>(null);
+
+  // Fetch ALL posts linked to this product (pending, approved, rejected)
+  const fetchPosts = useCallback(() => {
     if (!product?.id) { setFacebookPosts([]); return; }
-    productApi.getFacebookPosts(product.id)
+    productApi.getAllPostsForProduct(product.id)
       .then((posts) => setFacebookPosts(posts))
       .catch(() => setFacebookPosts([]));
   }, [product?.id]);
+
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+
+  const handleApproval = async (postId: string, status: 'approved' | 'rejected') => {
+    try {
+      setApprovingPostId(postId);
+      await productApi.updatePostApproval(postId, status);
+      toast(`Post ${status}`, 'success');
+      fetchPosts();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : `Failed to ${status} post`, 'error');
+    } finally {
+      setApprovingPostId(null);
+    }
+  };
 
   const visibleOutputs = outputs.filter((o) => !String(o.output_type || "").startsWith("product_"));
 
@@ -241,31 +259,70 @@ export function ContentPage() {
           </h2>
         </div>
         <div className="p-4 space-y-3">
-          {/* Facebook Posts Section */}
+          {/* Post Review Section */}
           {product && (
             <div className="mb-4">
               <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                Facebook Posts {facebookPosts.length > 0 && `(${facebookPosts.length})`}
+                <FileText className="h-3.5 w-3.5" /> Post Review {facebookPosts.length > 0 && `(${facebookPosts.length})`}
               </h3>
               {facebookPosts.length > 0 ? (
                 <div className="space-y-3">
-                  {facebookPosts.map((post) => (
-                    <FacebookPostCard
-                      key={post.id}
-                      content={post.content}
-                      image={post.image}
-                      likes={post.likes}
-                      comments={post.comments}
-                      shares={post.shares}
-                      approvalStatus={post.approval_status}
-                      createdAt={post.created_at}
-                      pageName={post.page_name || "Page"}
-                      profilePicture={post.page_profile_picture || undefined}
-                    />
-                  ))}
+                  {facebookPosts.map((post) => {
+                    const isPending = post.approval_status === 'pending';
+                    const isApproved = post.approval_status === 'approved';
+                    const isRejected = post.approval_status === 'rejected';
+                    return (
+                      <div key={post.id} className="bg-[hsl(var(--th-input)/0.5)] rounded-lg p-4 border border-[hsl(var(--th-border))]">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-[11px] text-[hsl(var(--th-text-muted))]">
+                            {format(new Date(post.created_at), "MMM d, h:mm a")}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                            isApproved ? 'bg-emerald-500/15 text-emerald-400' :
+                            isRejected ? 'bg-red-500/15 text-red-400' :
+                            'bg-amber-500/15 text-amber-400'
+                          }`}>
+                            {isApproved ? <CheckCircle className="h-3 w-3" /> :
+                             isRejected ? <XCircle className="h-3 w-3" /> :
+                             <Clock className="h-3 w-3" />}
+                            {post.approval_status}
+                          </span>
+                        </div>
+                        {post.image && (
+                          <img
+                            src={post.image}
+                            alt="Post image"
+                            className="w-full max-w-sm rounded-md border border-[hsl(var(--th-border))] object-cover mb-3"
+                            loading="lazy"
+                          />
+                        )}
+                        <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap mb-3">
+                          {post.content}
+                        </p>
+                        {isPending && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleApproval(post.id, 'approved')}
+                              disabled={approvingPostId === post.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors disabled:opacity-50"
+                            >
+                              <ThumbsUp className="h-3.5 w-3.5" /> Approve
+                            </button>
+                            <button
+                              onClick={() => handleApproval(post.id, 'rejected')}
+                              disabled={approvingPostId === post.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-50"
+                            >
+                              <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
-                <p className="text-sm text-[hsl(var(--th-text-muted))]">No linked Facebook posts.</p>
+                <p className="text-sm text-[hsl(var(--th-text-muted))]">No posts submitted for review.</p>
               )}
             </div>
           )}

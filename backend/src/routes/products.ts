@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config';
+import { checkAutoTransition } from '../services/auto-status';
 
 const router = Router();
 
@@ -195,6 +196,131 @@ router.get('/products/:productId/facebook-posts', async (req: Request, res: Resp
   } catch (err) {
     console.error('Error fetching facebook posts for product:', err);
     res.status(500).json({ error: 'Failed to fetch facebook posts' });
+  }
+});
+
+// GET /products/:productId/review-posts - Get ALL posts for a product (pending, approved, rejected)
+router.get('/products/:productId/review-posts', async (req: Request, res: Response) => {
+  try {
+    const { productId } = req.params;
+    const requestedLimit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+
+    const { data, error } = await supabase
+      .from('mock_facebook_posts')
+      .select('*, mock_facebook_pages!page_id(name, profile_picture)')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false })
+      .limit(requestedLimit);
+
+    if (error) throw new Error(error.message);
+
+    const posts = (data || []).map((row: Record<string, unknown>) => {
+      const page = row.mock_facebook_pages as { name?: string; profile_picture?: string } | null;
+      const { mock_facebook_pages: _, ...post } = row;
+      return {
+        ...post,
+        page_name: page?.name || null,
+        page_profile_picture: page?.profile_picture || null,
+      };
+    });
+
+    res.json(posts);
+  } catch (err) {
+    console.error('Error fetching review posts for product:', err);
+    res.status(500).json({ error: 'Failed to fetch review posts' });
+  }
+});
+
+// PATCH /facebook-posts/:postId/approval - Approve or reject a post
+router.patch('/facebook-posts/:postId/approval', async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const { status, approvedBy, notes } = req.body as {
+      status: 'approved' | 'rejected' | 'pending';
+      approvedBy?: string;
+      notes?: string;
+    };
+
+    if (!status || !['approved', 'rejected', 'pending'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status. Must be approved, rejected, or pending.' });
+    }
+
+    // 1. Validate that the post exists and has a product_id
+    const { data: post, error: postError } = await supabase
+      .from('mock_facebook_posts')
+      .select('id, product_id')
+      .eq('id', postId)
+      .maybeSingle();
+
+    if (postError) throw new Error(postError.message);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const productId = (post as Record<string, unknown>).product_id as string | null;
+    if (!productId) {
+      return res.status(400).json({ error: 'Post has no associated product' });
+    }
+
+    // 2. Insert approval record into mock_facebook_approvals
+    const { error: approvalError } = await supabase
+      .from('mock_facebook_approvals')
+      .insert({
+        post_id: postId,
+        status,
+        approved_by: approvedBy || 'content808-reviewer',
+        notes: notes || null,
+      });
+
+    if (approvalError) throw new Error(approvalError.message);
+
+    // 3. Update the post's approval_status
+    const { error: updateError } = await supabase
+      .from('mock_facebook_posts')
+      .update({ approval_status: status })
+      .eq('id', postId);
+
+    if (updateError) throw new Error(updateError.message);
+
+    // 4. Find the content_item associated with this product and trigger auto-transition
+    // Try by product_id column first, then fall back to product_title match
+    const { data: contentItems } = await supabase
+      .from('content_items')
+      .select('id')
+      .eq('product_id', productId)
+      .limit(1);
+
+    let contentItemId: string | null = null;
+    if (contentItems && contentItems.length > 0) {
+      contentItemId = (contentItems[0] as Record<string, unknown>).id as string;
+    } else {
+      // Fallback: find by product name matching product_title
+      const { data: productRow } = await supabase
+        .from('products')
+        .select('name')
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (productRow) {
+        const productName = (productRow as Record<string, unknown>).name as string;
+        const { data: itemsByTitle } = await supabase
+          .from('content_items')
+          .select('id')
+          .ilike('product_title', productName)
+          .limit(1);
+
+        if (itemsByTitle && itemsByTitle.length > 0) {
+          contentItemId = (itemsByTitle[0] as Record<string, unknown>).id as string;
+        }
+      }
+    }
+
+    if (contentItemId) {
+      await checkAutoTransition(contentItemId);
+    }
+
+    res.json({ message: `Post ${status} successfully`, postId, status });
+  } catch (err) {
+    console.error('Error updating post approval:', err);
+    res.status(500).json({ error: 'Failed to update post approval' });
   }
 });
 
