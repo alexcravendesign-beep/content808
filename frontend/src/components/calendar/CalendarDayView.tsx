@@ -86,6 +86,7 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
     const [localDragItem, setLocalDragItem] = useState<ContentItem | null>(null);
     const [dragOverHour, setDragOverHour] = useState<number | null>(null);
     const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+    const autoExpandedRef = useRef<Set<string>>(new Set());
 
     const dayItems = items.filter((item) => {
         const d = item.publish_date || item.due_date;
@@ -129,15 +130,16 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
         return parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0;
     });
 
-    // Auto-expand parents that have children (so newly split items are visible)
+    // Auto-expand parents that have children (only once per parent, so manual collapse is respected)
     const parentIdsWithChildren = Object.keys(childrenByParent);
-    const missingExpansions = parentIdsWithChildren.filter((id) => !expandedParents.has(id));
-    if (missingExpansions.length > 0) {
+    const newParents = parentIdsWithChildren.filter((id) => !autoExpandedRef.current.has(id));
+    if (newParents.length > 0) {
+        newParents.forEach((id) => autoExpandedRef.current.add(id));
         // Use a microtask to avoid setState during render
         Promise.resolve().then(() => {
             setExpandedParents((prev) => {
                 const next = new Set(prev);
-                missingExpansions.forEach((id) => next.add(id));
+                newParents.forEach((id) => next.add(id));
                 return next;
             });
         });
