@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { Sun, Moon, Monitor } from "lucide-react";
+import { Sun, Moon, Monitor, Heart } from "lucide-react";
 
-type Theme = "light" | "dark" | "system";
+type Theme = "light" | "dark" | "system" | "girly";
 
 interface ThemeContextType {
     theme: Theme;
-    resolved: "light" | "dark";
+    resolved: "light" | "dark" | "girly";
     setTheme: (theme: Theme) => void;
 }
 
@@ -23,14 +23,14 @@ function getSystemTheme(): "light" | "dark" {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function resolveTheme(theme: Theme): "light" | "dark" {
+function resolveTheme(theme: Theme): "light" | "dark" | "girly" {
     return theme === "system" ? getSystemTheme() : theme;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [theme, setThemeState] = useState<Theme>(() => {
         const saved = localStorage.getItem("theme") as Theme | null;
-        return saved && ["light", "dark", "system"].includes(saved) ? saved : "system";
+        return saved && ["light", "dark", "system", "girly"].includes(saved) ? saved : "system";
     });
     const [, forceUpdate] = useState(0);
 
@@ -44,11 +44,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // Apply class to <html>
     useEffect(() => {
         const root = document.documentElement;
-        if (resolved === "dark") {
-            root.classList.add("dark");
-        } else {
-            root.classList.remove("dark");
-        }
+        root.classList.remove("dark", "girly");
+        if (resolved === "dark") root.classList.add("dark");
+        if (resolved === "girly") root.classList.add("girly");
     }, [resolved]);
 
     // Listen for OS theme changes when in "system" mode
@@ -68,9 +66,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 }
 
 /* ── Toggle button for sidebar ── */
-const CYCLE: Theme[] = ["dark", "light", "system"];
-const ICONS: Record<Theme, React.ElementType> = { light: Sun, dark: Moon, system: Monitor };
-const LABELS: Record<Theme, string> = { light: "Light", dark: "Dark", system: "System" };
+const CYCLE: Theme[] = ["dark", "light", "girly", "system"];
+const ICONS: Record<Theme, React.ElementType> = { light: Sun, dark: Moon, girly: Heart, system: Monitor };
+const LABELS: Record<Theme, string> = { light: "Light", dark: "Dark", girly: "Girly", system: "System" };
 
 export function ThemeToggle({ collapsed }: { collapsed?: boolean }) {
     const { theme, setTheme } = useTheme();
