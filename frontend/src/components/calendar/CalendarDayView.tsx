@@ -119,12 +119,28 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
         itemsByHour[hour].push(item);
     });
 
-    // All-day items (midnight timestamps or date-only strings)
+    // All-day items: date-only strings or local-midnight timestamps
     const allDay = dayItems.filter((item) => {
         const d = item.publish_date || item.due_date;
         if (!d) return false;
-        return d.endsWith("T00:00:00.000Z") || d.length === 10;
+        if (d.length === 10) return true; // date-only string like "2026-02-27"
+        const parsed = new Date(d);
+        return parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0;
     });
+
+    // Auto-expand parents that have children (so newly split items are visible)
+    const parentIdsWithChildren = Object.keys(childrenByParent);
+    const missingExpansions = parentIdsWithChildren.filter((id) => !expandedParents.has(id));
+    if (missingExpansions.length > 0) {
+        // Use a microtask to avoid setState during render
+        Promise.resolve().then(() => {
+            setExpandedParents((prev) => {
+                const next = new Set(prev);
+                missingExpansions.forEach((id) => next.add(id));
+                return next;
+            });
+        });
+    }
 
     const nowHour = new Date().getHours();
     const nowMinute = new Date().getMinutes();
