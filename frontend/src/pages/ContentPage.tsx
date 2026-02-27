@@ -9,7 +9,7 @@ import {
   ArrowLeft, ChevronRight, FileText, ExternalLink,
   Activity, Sparkles, User, Trash2, Copy, Check,
   ThumbsUp, ThumbsDown, Clock, CheckCircle, XCircle,
-  MessageSquare, Send, RotateCcw
+  MessageSquare, Send, RotateCcw, Image, ChevronDown, ChevronUp
 } from "lucide-react";
 import { format } from "date-fns";
 import { STATUS_BG_SOLID as STATUS_COLORS } from "@/lib/statusConfig";
@@ -71,6 +71,7 @@ export function ContentPage() {
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [submittingComment, setSubmittingComment] = useState<string | null>(null);
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
 
   // Fetch ALL posts linked to this product (pending, approved, rejected)
   const fetchPosts = useCallback(() => {
@@ -182,8 +183,16 @@ export function ContentPage() {
   const painPoints = directionObj && Array.isArray(directionObj.pain_points) ? (directionObj.pain_points as string[]) : [];
   const directionStr = typeof directionRaw === "string" && directionRaw !== "[object Object]" ? directionRaw : "";
 
+  // Separate image outputs from other outputs
+  const imageOutputs = visibleOutputs.filter(
+    (o) => ["hero_image", "infographic_image", "post_image", "product_image"].includes(o.output_type) && (o.output_data?.url || o.output_data?.image_url)
+  );
+  const otherOutputs = visibleOutputs.filter(
+    (o) => !imageOutputs.includes(o)
+  );
+
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-7xl mx-auto">
       {/* Breadcrumb navigation */}
       <div className="flex items-center gap-2 text-sm text-[hsl(var(--th-text-secondary))] mb-4">
         <button onClick={() => navigate(-1)} className="flex items-center gap-1 hover:text-[hsl(var(--th-text))] transition-colors">
@@ -301,130 +310,221 @@ export function ContentPage() {
           </h2>
         </div>
         <div className="p-4 space-y-3">
-          {/* Post Review Section */}
+          {/* Post Review Section — 3-column compact grid */}
           {product && (
             <div className="mb-4">
               <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" /> Post Review {facebookPosts.length > 0 && `(${facebookPosts.length})`}
               </h3>
               {facebookPosts.length > 0 ? (
-                <div className="space-y-3">
-                  {facebookPosts.map((post) => {
-                    const isPending = post.approval_status === 'pending';
-                    const isApproved = post.approval_status === 'approved';
-                    const isRejected = post.approval_status === 'rejected';
-                    return (
-                      <div key={post.id} className="bg-[hsl(var(--th-input)/0.5)] rounded-lg p-4 border border-[hsl(var(--th-border))]">
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="text-[11px] text-[hsl(var(--th-text-muted))]">
-                            {format(new Date(post.created_at), "MMM d, h:mm a")}
-                          </span>
-                          <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium ${
-                            isApproved ? 'bg-emerald-500/15 text-emerald-400' :
-                            isRejected ? 'bg-red-500/15 text-red-400' :
-                            'bg-amber-500/15 text-amber-400'
-                          }`}>
-                            {isApproved ? <CheckCircle className="h-3 w-3" /> :
-                             isRejected ? <XCircle className="h-3 w-3" /> :
-                             <Clock className="h-3 w-3" />}
-                            {post.approval_status}
-                          </span>
-                        </div>
-                        {post.image && (
-                          <img
-                            src={post.image}
-                            alt="Post image"
-                            className="w-full max-w-sm rounded-md border border-[hsl(var(--th-border))] object-cover mb-3"
-                            loading="lazy"
-                          />
-                        )}
-                        <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap mb-3">
-                          {post.content}
-                        </p>
-                        {/* Status action buttons - show relevant actions for current status */}
-                        <div className="flex items-center gap-2 mb-3">
-                          {!isApproved && (
-                            <button
-                              onClick={() => handleApproval(post.id, 'approved')}
-                              disabled={approvingPostId === post.id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors disabled:opacity-50"
-                            >
-                              <ThumbsUp className="h-3.5 w-3.5" /> Approve
-                            </button>
-                          )}
-                          {!isRejected && (
-                            <button
-                              onClick={() => handleApproval(post.id, 'rejected')}
-                              disabled={approvingPostId === post.id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-50"
-                            >
-                              <ThumbsDown className="h-3.5 w-3.5" /> Reject
-                            </button>
-                          )}
-                          {!isPending && (
-                            <button
-                              onClick={() => handleApproval(post.id, 'pending')}
-                              disabled={approvingPostId === post.id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
-                            >
-                              <RotateCcw className="h-3.5 w-3.5" /> Back to Queue
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Comments section */}
-                        <div className="border-t border-[hsl(var(--th-border))] pt-3">
-                          <button
-                            onClick={() => toggleComments(post.id)}
-                            className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--th-text-muted))] hover:text-[hsl(var(--th-text-secondary))] transition-colors"
-                          >
-                            <MessageSquare className="h-3.5 w-3.5" />
-                            {post.comments > 0 ? `${post.comments} comment${post.comments !== 1 ? 's' : ''}` : 'Add comment'}
-                          </button>
-
-                          {expandedComments.has(post.id) && (
-                            <div className="mt-3 space-y-2">
-                              {(postComments[post.id] || []).map((comment) => (
-                                <div key={comment.id} className="bg-[hsl(var(--th-surface)/0.5)] rounded-md p-2.5 text-xs">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-medium text-[hsl(var(--th-text))]">{comment.author_name}</span>
-                                    <span className="text-[hsl(var(--th-text-muted))]">{format(new Date(comment.created_at), "MMM d, h:mm a")}</span>
-                                  </div>
-                                  <p className="text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap">{comment.content}</p>
-                                </div>
-                              ))}
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={commentInputs[post.id] || ''}
-                                  onChange={(e) => setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddComment(post.id); }}
-                                  placeholder="Write a comment..."
-                                  className="flex-1 bg-[hsl(var(--th-input))] border border-[hsl(var(--th-border))] rounded-md px-3 py-1.5 text-xs text-[hsl(var(--th-text))] placeholder:text-[hsl(var(--th-text-muted))] focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-                                />
-                                <button
-                                  onClick={() => handleAddComment(post.id)}
-                                  disabled={submittingComment === post.id || !commentInputs[post.id]?.trim()}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors disabled:opacity-50"
-                                >
-                                  <Send className="h-3 w-3" />
-                                </button>
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {facebookPosts.map((post) => {
+                      const isPending = post.approval_status === 'pending';
+                      const isApproved = post.approval_status === 'approved';
+                      const isRejected = post.approval_status === 'rejected';
+                      const isExpanded = expandedPostId === post.id;
+                      return (
+                        <div key={post.id} className="bg-[hsl(var(--th-input)/0.5)] rounded-lg border border-[hsl(var(--th-border))] flex flex-col overflow-hidden">
+                          {/* Thumbnail */}
+                          {post.image ? (
+                            <div className="relative aspect-[4/3] overflow-hidden bg-[hsl(var(--th-surface))]">
+                              <img
+                                src={post.image}
+                                alt="Post image"
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
+                              {/* Status badge overlay */}
+                              <div className="absolute top-2 right-2">
+                                <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm ${
+                                  isApproved ? 'bg-emerald-500/30 text-emerald-200' :
+                                  isRejected ? 'bg-red-500/30 text-red-200' :
+                                  'bg-amber-500/30 text-amber-200'
+                                }`}>
+                                  {isApproved ? <CheckCircle className="h-2.5 w-2.5" /> :
+                                   isRejected ? <XCircle className="h-2.5 w-2.5" /> :
+                                   <Clock className="h-2.5 w-2.5" />}
+                                  {post.approval_status}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="relative aspect-[4/3] overflow-hidden bg-[hsl(var(--th-surface))] flex items-center justify-center">
+                              <FileText className="h-8 w-8 text-[hsl(var(--th-text-muted))]" />
+                              <div className="absolute top-2 right-2">
+                                <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm ${
+                                  isApproved ? 'bg-emerald-500/30 text-emerald-200' :
+                                  isRejected ? 'bg-red-500/30 text-red-200' :
+                                  'bg-amber-500/30 text-amber-200'
+                                }`}>
+                                  {isApproved ? <CheckCircle className="h-2.5 w-2.5" /> :
+                                   isRejected ? <XCircle className="h-2.5 w-2.5" /> :
+                                   <Clock className="h-2.5 w-2.5" />}
+                                  {post.approval_status}
+                                </span>
                               </div>
                             </div>
                           )}
+
+                          {/* Card body */}
+                          <div className="p-3 flex flex-col flex-1">
+                            <span className="text-[10px] text-[hsl(var(--th-text-muted))] mb-1">
+                              {format(new Date(post.created_at), "MMM d, h:mm a")}
+                            </span>
+                            <p className={`text-xs text-[hsl(var(--th-text-secondary))] mb-2 ${isExpanded ? 'whitespace-pre-wrap' : 'line-clamp-3'}`}>
+                              {post.content}
+                            </p>
+                            {post.content.length > 150 && (
+                              <button
+                                onClick={() => setExpandedPostId(isExpanded ? null : post.id)}
+                                className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 mb-2 self-start"
+                              >
+                                {isExpanded ? <><ChevronUp className="h-3 w-3" /> Show less</> : <><ChevronDown className="h-3 w-3" /> Show more</>}
+                              </button>
+                            )}
+
+                            {/* Action buttons */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-auto mb-2">
+                              {!isApproved && (
+                                <button
+                                  onClick={() => handleApproval(post.id, 'approved')}
+                                  disabled={approvingPostId === post.id}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors disabled:opacity-50"
+                                >
+                                  <ThumbsUp className="h-3 w-3" /> Approve
+                                </button>
+                              )}
+                              {!isRejected && (
+                                <button
+                                  onClick={() => handleApproval(post.id, 'rejected')}
+                                  disabled={approvingPostId === post.id}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-50"
+                                >
+                                  <ThumbsDown className="h-3 w-3" /> Reject
+                                </button>
+                              )}
+                              {!isPending && (
+                                <button
+                                  onClick={() => handleApproval(post.id, 'pending')}
+                                  disabled={approvingPostId === post.id}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+                                >
+                                  <RotateCcw className="h-3 w-3" /> Queue
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Comments toggle */}
+                            <div className="border-t border-[hsl(var(--th-border))] pt-2">
+                              <button
+                                onClick={() => toggleComments(post.id)}
+                                className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--th-text-muted))] hover:text-[hsl(var(--th-text-secondary))] transition-colors"
+                              >
+                                <MessageSquare className="h-3 w-3" />
+                                {post.comments > 0 ? `${post.comments} comment${post.comments !== 1 ? 's' : ''}` : 'Comment'}
+                              </button>
+
+                              {expandedComments.has(post.id) && (
+                                <div className="mt-2 space-y-1.5">
+                                  {(postComments[post.id] || []).map((comment) => (
+                                    <div key={comment.id} className="bg-[hsl(var(--th-surface)/0.5)] rounded-md p-2 text-[10px]">
+                                      <div className="flex items-center gap-1.5 mb-0.5">
+                                        <span className="font-medium text-[hsl(var(--th-text))]">{comment.author_name}</span>
+                                        <span className="text-[hsl(var(--th-text-muted))]">{format(new Date(comment.created_at), "MMM d, h:mm a")}</span>
+                                      </div>
+                                      <p className="text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap">{comment.content}</p>
+                                    </div>
+                                  ))}
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={commentInputs[post.id] || ''}
+                                      onChange={(e) => setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') handleAddComment(post.id); }}
+                                      placeholder="Write a comment..."
+                                      className="flex-1 bg-[hsl(var(--th-input))] border border-[hsl(var(--th-border))] rounded-md px-2 py-1 text-[10px] text-[hsl(var(--th-text))] placeholder:text-[hsl(var(--th-text-muted))] focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                                    />
+                                    <button
+                                      onClick={() => handleAddComment(post.id)}
+                                      disabled={submittingComment === post.id || !commentInputs[post.id]?.trim()}
+                                      className="inline-flex items-center p-1 text-[10px] font-medium rounded-md bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors disabled:opacity-50"
+                                    >
+                                      <Send className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                </>
               ) : (
                 <p className="text-sm text-[hsl(var(--th-text-muted))]">No posts submitted for review.</p>
               )}
             </div>
           )}
 
-          {visibleOutputs.length === 0 && !product && <p className="text-sm text-[hsl(var(--th-text-muted))]">No outputs yet.</p>}
-          {visibleOutputs.map((o) => {
+          {/* Image outputs — media library-style grid */}
+          {imageOutputs.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-xs font-semibold text-fuchsia-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Image className="h-3.5 w-3.5" /> Media ({imageOutputs.length})
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {imageOutputs.map((o) => {
+                  const url = String(o.output_data?.url || o.output_data?.image_url || "");
+                  const outputType = o.output_type.replace(/_/g, " ");
+                  return (
+                    <div key={o.id} className="group relative aspect-square rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] overflow-hidden">
+                      <img src={url} alt={outputType} className="h-full w-full object-cover" loading="lazy" />
+                      {/* Hover overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute bottom-0 left-0 right-0 p-2.5">
+                          <p className="text-[10px] text-white/80 truncate">{outputType}</p>
+                          <span className="text-[10px] text-white/60">{format(new Date(o.created_at), "MMM d, h:mm a")}</span>
+                        </div>
+                        <div className="absolute top-2 left-2 flex items-center gap-1">
+                          <button
+                            onClick={() => handleCopyUrl(o.id, url)}
+                            className="p-1 rounded-md bg-black/40 backdrop-blur-sm text-white/80 hover:text-white hover:bg-black/60 transition-all"
+                            title="Copy URL"
+                          >
+                            {copiedUrlId === o.id ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteOutput(o.id)}
+                            disabled={deletingOutputId === o.id}
+                            className="p-1 rounded-md bg-black/40 backdrop-blur-sm text-red-300 hover:text-red-200 hover:bg-black/60 transition-all disabled:opacity-50"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                      {/* Type badge */}
+                      <div className="absolute top-2 right-2">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium backdrop-blur-sm ${
+                          o.output_type === "hero_image" ? "bg-fuchsia-500/30 text-fuchsia-200"
+                          : o.output_type === "infographic_image" ? "bg-emerald-500/30 text-emerald-200"
+                          : "bg-indigo-500/30 text-indigo-200"
+                        }`}>
+                          {outputType}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Other outputs (copy, metadata, etc.) */}
+          {otherOutputs.length === 0 && imageOutputs.length === 0 && !product && <p className="text-sm text-[hsl(var(--th-text-muted))]">No outputs yet.</p>}
+          {otherOutputs.map((o) => {
             const outputUrl = typeof o.output_data?.url === "string"
               ? o.output_data.url
               : (typeof o.output_data?.image_url === "string" ? o.output_data.image_url : null);
