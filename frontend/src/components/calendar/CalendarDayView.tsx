@@ -357,8 +357,12 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
                             {allDay.map((item) => (
                                 <button
                                     key={item.id}
+                                    draggable
+                                    onDragStart={(e) => { e.stopPropagation(); handleDragStart(item); }}
+                                    onDragEnd={handleDragEnd}
                                     onClick={(e) => onItemClick(item, (e.currentTarget as HTMLElement).getBoundingClientRect())}
-                                    className={`flex items-center gap-2 ${STATUS_BG[item.status] || "bg-[hsl(var(--th-surface-hover))] border-[hsl(var(--th-border))]"} border rounded-lg px-3 py-2 hover:opacity-80 transition-opacity`}
+                                    className={`flex items-center gap-2 ${STATUS_BG[item.status] || "bg-[hsl(var(--th-surface-hover))] border-[hsl(var(--th-border))]"} border rounded-lg px-3 py-2 hover:opacity-80 transition-opacity cursor-grab active:cursor-grabbing`}
+                                    title="Drag into an hour slot to time this item"
                                 >
                                     <ProductThumbnail item={item} size="sm" />
                                     <span className="text-xs font-medium text-[hsl(var(--th-text))]">{item.product_title || item.brand}</span>
