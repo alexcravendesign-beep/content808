@@ -124,6 +124,7 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
         const d = item.publish_date || item.due_date;
         if (!d) return false;
         if (d.length === 10) return true; // date-only string like "2026-02-27"
+        if (d.endsWith("T00:00:00.000Z")) return true; // UTC midnight
         const parsed = new Date(d);
         return parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0;
     });

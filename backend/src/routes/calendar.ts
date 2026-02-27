@@ -279,7 +279,6 @@ router.post('/items/:id/split', async (req: Request, res: Response) => {
       product_title: `${parent.product_title || parent.brand} — Post ${i + 1}`,
       product_url: parent.product_url || '',
       product_image_url: parent.product_image_url || '',
-      product_id: parent.product_id || null,
       campaign_goal: parent.campaign_goal || null,
       direction: parent.direction || null,
       target_audience: parent.target_audience || null,
