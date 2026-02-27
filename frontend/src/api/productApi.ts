@@ -81,8 +81,8 @@ export interface CategoryItem {
 
 /* ── API calls ── */
 
-async function request<T>(path: string): Promise<T> {
-    const res = await fetch(`${BASE}${path}`);
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, options);
     if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || `Product API request failed: ${res.status}`);
@@ -108,6 +108,14 @@ export interface MockFacebookPostRecord {
     page_profile_picture: string | null;
 }
 
+export interface PostComment {
+    id: string;
+    post_id: string;
+    author_name: string;
+    content: string;
+    created_at: string;
+}
+
 export const productApi = {
     searchProducts: (params: ProductSearchParams = {}) => {
         const qs = new URLSearchParams();
@@ -129,4 +137,30 @@ export const productApi = {
 
     getFacebookPosts: (productId: string) =>
         request<MockFacebookPostRecord[]>(`/products/${productId}/facebook-posts`),
+
+    getAllPostsForProduct: (productId: string) =>
+        request<MockFacebookPostRecord[]>(`/products/${productId}/review-posts`),
+
+    updatePostApproval: (postId: string, status: string, notes?: string) =>
+        request<{ message: string; postId: string; status: string }>(
+            `/facebook-posts/${postId}/approval`,
+            {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, notes }),
+            }
+        ),
+
+    getPostComments: (postId: string) =>
+        request<PostComment[]>(`/facebook-posts/${postId}/comments`),
+
+    addPostComment: (postId: string, content: string, authorName?: string) =>
+        request<PostComment>(
+            `/facebook-posts/${postId}/comments`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, authorName }),
+            }
+        ),
 };
