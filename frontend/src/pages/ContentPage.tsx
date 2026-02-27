@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { api, ContentItem, ContentItemOutput } from "@/api/client";
-import { productApi, Product, MockFacebookPostRecord } from "@/api/productApi";
+import { productApi, Product, MockFacebookPostRecord, PostComment } from "@/api/productApi";
 // FacebookPostCard replaced by inline review panel
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import {
   ArrowLeft, ChevronRight, FileText, ExternalLink,
   Activity, Sparkles, User, Trash2, Copy, Check,
-  ThumbsUp, ThumbsDown, Clock, CheckCircle, XCircle
+  ThumbsUp, ThumbsDown, Clock, CheckCircle, XCircle,
+  MessageSquare, Send, RotateCcw
 } from "lucide-react";
 import { format } from "date-fns";
 import { STATUS_BG_SOLID as STATUS_COLORS } from "@/lib/statusConfig";
@@ -66,6 +67,10 @@ export function ContentPage() {
   }, [item?.product_title]);
 
   const [approvingPostId, setApprovingPostId] = useState<string | null>(null);
+  const [postComments, setPostComments] = useState<Record<string, PostComment[]>>({});
+  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+  const [submittingComment, setSubmittingComment] = useState<string | null>(null);
 
   // Fetch ALL posts linked to this product (pending, approved, rejected)
   const fetchPosts = useCallback(() => {
@@ -77,16 +82,53 @@ export function ContentPage() {
 
   useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
-  const handleApproval = async (postId: string, status: 'approved' | 'rejected') => {
+  const handleApproval = async (postId: string, status: 'approved' | 'rejected' | 'pending') => {
     try {
       setApprovingPostId(postId);
       await productApi.updatePostApproval(postId, status);
-      toast(`Post ${status}`, 'success');
+      toast(`Post ${status === 'pending' ? 'sent back to queue' : status}`, 'success');
       fetchPosts();
     } catch (err) {
-      toast(err instanceof Error ? err.message : `Failed to ${status} post`, 'error');
+      toast(err instanceof Error ? err.message : `Failed to update post`, 'error');
     } finally {
       setApprovingPostId(null);
+    }
+  };
+
+  const toggleComments = async (postId: string) => {
+    const next = new Set(expandedComments);
+    if (next.has(postId)) {
+      next.delete(postId);
+    } else {
+      next.add(postId);
+      // Fetch comments if not already loaded
+      if (!postComments[postId]) {
+        try {
+          const comments = await productApi.getPostComments(postId);
+          setPostComments((prev) => ({ ...prev, [postId]: comments }));
+        } catch {
+          setPostComments((prev) => ({ ...prev, [postId]: [] }));
+        }
+      }
+    }
+    setExpandedComments(next);
+  };
+
+  const handleAddComment = async (postId: string) => {
+    const text = commentInputs[postId]?.trim();
+    if (!text) return;
+    try {
+      setSubmittingComment(postId);
+      const newComment = await productApi.addPostComment(postId, text);
+      setPostComments((prev) => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), newComment],
+      }));
+      setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to add comment', 'error');
+    } finally {
+      setSubmittingComment(null);
     }
   };
 
@@ -299,8 +341,9 @@ export function ContentPage() {
                         <p className="text-sm text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap mb-3">
                           {post.content}
                         </p>
-                        {isPending && (
-                          <div className="flex items-center gap-2">
+                        {/* Status action buttons - show relevant actions for current status */}
+                        <div className="flex items-center gap-2 mb-3">
+                          {!isApproved && (
                             <button
                               onClick={() => handleApproval(post.id, 'approved')}
                               disabled={approvingPostId === post.id}
@@ -308,6 +351,8 @@ export function ContentPage() {
                             >
                               <ThumbsUp className="h-3.5 w-3.5" /> Approve
                             </button>
+                          )}
+                          {!isRejected && (
                             <button
                               onClick={() => handleApproval(post.id, 'rejected')}
                               disabled={approvingPostId === post.id}
@@ -315,8 +360,59 @@ export function ContentPage() {
                             >
                               <ThumbsDown className="h-3.5 w-3.5" /> Reject
                             </button>
-                          </div>
-                        )}
+                          )}
+                          {!isPending && (
+                            <button
+                              onClick={() => handleApproval(post.id, 'pending')}
+                              disabled={approvingPostId === post.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" /> Back to Queue
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Comments section */}
+                        <div className="border-t border-[hsl(var(--th-border))] pt-3">
+                          <button
+                            onClick={() => toggleComments(post.id)}
+                            className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--th-text-muted))] hover:text-[hsl(var(--th-text-secondary))] transition-colors"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            {post.comments > 0 ? `${post.comments} comment${post.comments !== 1 ? 's' : ''}` : 'Add comment'}
+                          </button>
+
+                          {expandedComments.has(post.id) && (
+                            <div className="mt-3 space-y-2">
+                              {(postComments[post.id] || []).map((comment) => (
+                                <div key={comment.id} className="bg-[hsl(var(--th-surface)/0.5)] rounded-md p-2.5 text-xs">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="font-medium text-[hsl(var(--th-text))]">{comment.author_name}</span>
+                                    <span className="text-[hsl(var(--th-text-muted))]">{format(new Date(comment.created_at), "MMM d, h:mm a")}</span>
+                                  </div>
+                                  <p className="text-[hsl(var(--th-text-secondary))] whitespace-pre-wrap">{comment.content}</p>
+                                </div>
+                              ))}
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={commentInputs[post.id] || ''}
+                                  onChange={(e) => setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddComment(post.id); }}
+                                  placeholder="Write a comment..."
+                                  className="flex-1 bg-[hsl(var(--th-input))] border border-[hsl(var(--th-border))] rounded-md px-3 py-1.5 text-xs text-[hsl(var(--th-text))] placeholder:text-[hsl(var(--th-text-muted))] focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                                />
+                                <button
+                                  onClick={() => handleAddComment(post.id)}
+                                  disabled={submittingComment === post.id || !commentInputs[post.id]?.trim()}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors disabled:opacity-50"
+                                >
+                                  <Send className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

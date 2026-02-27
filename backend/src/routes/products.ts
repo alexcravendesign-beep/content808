@@ -324,4 +324,81 @@ router.patch('/facebook-posts/:postId/approval', async (req: Request, res: Respo
   }
 });
 
+// GET /facebook-posts/:postId/comments - Get comments for a post
+router.get('/facebook-posts/:postId/comments', async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+
+    const { data, error } = await supabase
+      .from('mock_facebook_comments')
+      .select('id, post_id, author_name, content, created_at')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    res.json(data || []);
+  } catch (err) {
+    console.error('Error fetching comments for post:', err);
+    res.status(500).json({ error: 'Failed to fetch comments' });
+  }
+});
+
+// POST /facebook-posts/:postId/comments - Add a comment to a post
+router.post('/facebook-posts/:postId/comments', async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const { authorName, content } = req.body as {
+      authorName?: string;
+      content: string;
+    };
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Comment content is required' });
+    }
+
+    // Validate post exists
+    const { data: post, error: postError } = await supabase
+      .from('mock_facebook_posts')
+      .select('id')
+      .eq('id', postId)
+      .maybeSingle();
+
+    if (postError) throw new Error(postError.message);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    // Generate a simple text id
+    const commentId = `comment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    const { data: newComment, error: insertError } = await supabase
+      .from('mock_facebook_comments')
+      .insert({
+        id: commentId,
+        post_id: postId,
+        author_name: authorName || 'Content808 Reviewer',
+        content: content.trim(),
+      })
+      .select()
+      .single();
+
+    if (insertError) throw new Error(insertError.message);
+
+    // Update the comment count on the post
+    const { count } = await supabase
+      .from('mock_facebook_comments')
+      .select('*', { count: 'exact', head: true })
+      .eq('post_id', postId);
+
+    await supabase
+      .from('mock_facebook_posts')
+      .update({ comments: count || 0 })
+      .eq('id', postId);
+
+    res.status(201).json(newComment);
+  } catch (err) {
+    console.error('Error adding comment to post:', err);
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
 export default router;
