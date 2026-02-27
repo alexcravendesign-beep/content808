@@ -212,10 +212,16 @@ export function CalendarDayView({ currentDate, items, notes = [], onItemClick, o
                         </div>
                     </div>
                 </div>
-                {/* Render children below parent when expanded */}
+                {/* Render children below parent when expanded (only children in the same hour) */}
                 {hasChildren && isExpanded && (
                     <div className="mt-1">
-                        {childrenByParent[item.id].map((child) => renderItemCard(child, true))}
+                        {childrenByParent[item.id]
+                            .filter((child) => {
+                                const cd = child.publish_date || child.due_date;
+                                const pd = item.publish_date || item.due_date;
+                                return cd && pd && new Date(cd).getHours() === new Date(pd).getHours();
+                            })
+                            .map((child) => renderItemCard(child, true))}
                     </div>
                 )}
             </div>
