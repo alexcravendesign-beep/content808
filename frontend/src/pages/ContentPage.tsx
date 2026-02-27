@@ -126,6 +126,10 @@ export function ContentPage() {
         [postId]: [...(prev[postId] || []), newComment],
       }));
       setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
+      // Update the local comment count so the badge stays in sync
+      setFacebookPosts((prev) =>
+        prev.map((p) => p.id === postId ? { ...p, comments: p.comments + 1 } : p)
+      );
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to add comment', 'error');
     } finally {
