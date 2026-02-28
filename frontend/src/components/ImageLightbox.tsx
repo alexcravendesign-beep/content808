@@ -74,6 +74,7 @@ export function ImageLightbox({ src, alt = "Image preview", open, onClose, label
   const handleDownload = async () => {
     try {
       const response = await fetch(src, { mode: "cors" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
