@@ -153,6 +153,7 @@ export interface ContentItem {
   creative_done?: boolean;
   has_facebook_approved?: boolean;
   approved_facebook_posts?: number;
+  pending_facebook_posts?: number;
   parent_item_id?: string | null;
 }
 
