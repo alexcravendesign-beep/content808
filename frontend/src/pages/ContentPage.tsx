@@ -503,14 +503,14 @@ export function ContentPage() {
                         </div>
                         <div className="absolute top-2 left-2 flex items-center gap-1">
                           <button
-                            onClick={() => handleCopyUrl(o.id, url)}
+                            onClick={(e) => { e.stopPropagation(); handleCopyUrl(o.id, url); }}
                             className="p-1 rounded-md bg-black/40 backdrop-blur-sm text-white/80 hover:text-white hover:bg-black/60 transition-all"
                             title="Copy URL"
                           >
                             {copiedUrlId === o.id ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                           </button>
                           <button
-                            onClick={() => handleDeleteOutput(o.id)}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteOutput(o.id); }}
                             disabled={deletingOutputId === o.id}
                             className="p-1 rounded-md bg-black/40 backdrop-blur-sm text-red-300 hover:text-red-200 hover:bg-black/60 transition-all disabled:opacity-50"
                             title="Delete"
