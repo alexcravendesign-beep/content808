@@ -84,7 +84,7 @@ router.get('/items', async (req: Request, res: Response) => {
 
     const items = data || [];
     const ids = items.map((i: any) => i.id).filter(Boolean);
-    let flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean; has_facebook_approved: boolean; approved_facebook_posts: number }> = {};
+    let flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean; has_facebook_approved: boolean; approved_facebook_posts: number; pending_facebook_posts: number }> = {};
 
     if (ids.length) {
       const { data: outputs, error: outErr } = await supabase
@@ -95,11 +95,11 @@ router.get('/items', async (req: Request, res: Response) => {
         .order('created_at', { ascending: false });
       if (outErr) throw new Error(outErr.message);
 
-      for (const id of ids) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
+      for (const id of ids) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0, pending_facebook_posts: 0 };
 
       for (const o of outputs || []) {
         const id = (o as any).content_item_id as string;
-        if (!flagsById[id]) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
+        if (!flagsById[id]) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0, pending_facebook_posts: 0 };
         const status = (o as any).output_data?.status || 'completed';
         if (status !== 'completed') continue;
         if ((o as any).output_type === 'hero_image') flagsById[id].has_hero = true;
@@ -141,17 +141,32 @@ router.get('/items', async (req: Request, res: Response) => {
           .eq('approval_status', 'approved');
         if (fbErr) throw new Error(fbErr.message);
 
+        const { data: pendingFbRows, error: pendingFbErr } = await supabase
+          .from('mock_facebook_posts')
+          .select('product_id')
+          .in('product_id', productIds)
+          .eq('approval_status', 'pending');
+        if (pendingFbErr) throw new Error(pendingFbErr.message);
+
         const approvedByProduct = new Map<string, number>();
         for (const row of fbRows || []) {
           const pid = (row as any).product_id as string;
           approvedByProduct.set(pid, (approvedByProduct.get(pid) || 0) + 1);
         }
 
+        const pendingByProduct = new Map<string, number>();
+        for (const row of pendingFbRows || []) {
+          const pid = (row as any).product_id as string;
+          pendingByProduct.set(pid, (pendingByProduct.get(pid) || 0) + 1);
+        }
+
         for (const [itemId, productId] of itemToProduct.entries()) {
           const c = approvedByProduct.get(productId) || 0;
-          if (!flagsById[itemId]) flagsById[itemId] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
+          const p = pendingByProduct.get(productId) || 0;
+          if (!flagsById[itemId]) flagsById[itemId] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0, pending_facebook_posts: 0 };
           flagsById[itemId].approved_facebook_posts = c;
           flagsById[itemId].has_facebook_approved = c > 0;
+          flagsById[itemId].pending_facebook_posts = p;
         }
       }
 
@@ -160,7 +175,7 @@ router.get('/items', async (req: Request, res: Response) => {
       }
     }
 
-    const enriched = items.map((i: any) => ({ ...i, ...(flagsById[i.id] || { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 }) }));
+    const enriched = items.map((i: any) => ({ ...i, ...(flagsById[i.id] || { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0, pending_facebook_posts: 0 }) }));
 
     res.json({ items: enriched, total, limit: pageLimit, offset: pageOffset });
   } catch (err) {

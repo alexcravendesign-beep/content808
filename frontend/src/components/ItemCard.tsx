@@ -53,6 +53,11 @@ export function ItemCard({ item, onClick, onViewOutputs, compact }: ItemCardProp
           F {item.has_facebook_approved ? '✓' : '·'}
           {item.approved_facebook_posts ? ` ${item.approved_facebook_posts}` : ''}
         </span>
+        {(item.pending_facebook_posts ?? 0) > 0 && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/20 text-amber-300">
+            P {item.pending_facebook_posts}
+          </span>
+        )}
         {item.assignee && (
           <span className="flex items-center gap-1">
             <User className="h-3 w-3" />

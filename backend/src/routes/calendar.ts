@@ -92,7 +92,7 @@ router.get('/calendar', async (req: Request, res: Response) => {
 
     const contentRows = (contentData || []) as Array<Record<string, unknown>>;
     const contentIds = contentRows.map((r) => String(r.id)).filter(Boolean);
-    const flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean; has_facebook_approved: boolean; approved_facebook_posts: number }> = {};
+    const flagsById: Record<string, { has_hero: boolean; has_infographic: boolean; creative_done: boolean; has_facebook_approved: boolean; approved_facebook_posts: number; pending_facebook_posts: number }> = {};
 
     if (contentIds.length) {
       const { data: outputs, error: outErr } = await supabase
@@ -103,7 +103,7 @@ router.get('/calendar', async (req: Request, res: Response) => {
         .order('created_at', { ascending: false });
       if (outErr) throw new Error(outErr.message);
 
-      for (const id of contentIds) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
+      for (const id of contentIds) flagsById[id] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0, pending_facebook_posts: 0 };
       for (const o of outputs || []) {
         const id = String((o as any).content_item_id);
         const status = (o as any).output_data?.status || 'completed';
@@ -145,6 +145,13 @@ router.get('/calendar', async (req: Request, res: Response) => {
           .eq('approval_status', 'approved');
         if (fbErr) throw new Error(fbErr.message);
 
+        const { data: pendingFbRows, error: pendingFbErr } = await supabase
+          .from('mock_facebook_posts')
+          .select('product_id')
+          .in('product_id', productIds)
+          .eq('approval_status', 'pending');
+        if (pendingFbErr) throw new Error(pendingFbErr.message);
+
         const approvedByProduct = new Map<string, number>();
         for (const row of fbRows || []) {
           const pid = String((row as any).product_id || '');
@@ -152,11 +159,20 @@ router.get('/calendar', async (req: Request, res: Response) => {
           approvedByProduct.set(pid, (approvedByProduct.get(pid) || 0) + 1);
         }
 
+        const pendingByProduct = new Map<string, number>();
+        for (const row of pendingFbRows || []) {
+          const pid = String((row as any).product_id || '');
+          if (!pid) continue;
+          pendingByProduct.set(pid, (pendingByProduct.get(pid) || 0) + 1);
+        }
+
         for (const [itemId, productId] of itemToProduct.entries()) {
           const c = approvedByProduct.get(productId) || 0;
-          if (!flagsById[itemId]) flagsById[itemId] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 };
+          const p = pendingByProduct.get(productId) || 0;
+          if (!flagsById[itemId]) flagsById[itemId] = { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0, pending_facebook_posts: 0 };
           flagsById[itemId].approved_facebook_posts = c;
           flagsById[itemId].has_facebook_approved = c > 0;
+          flagsById[itemId].pending_facebook_posts = p;
         }
       }
 
@@ -167,7 +183,7 @@ router.get('/calendar', async (req: Request, res: Response) => {
 
     const contentItems = contentRows.map((row: Record<string, unknown>) => ({
       ...row,
-      ...(flagsById[String(row.id)] || { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0 }),
+      ...(flagsById[String(row.id)] || { has_hero: false, has_infographic: false, creative_done: false, has_facebook_approved: false, approved_facebook_posts: 0, pending_facebook_posts: 0 }),
       item_type: 'content_item',
     }));
 
