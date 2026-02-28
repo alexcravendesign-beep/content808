@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { X, Copy, Check, Download, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 interface ImageLightboxProps {
@@ -16,6 +16,7 @@ export function ImageLightbox({ src, alt = "Image preview", open, onClose, label
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const didDragRef = useRef(false);
 
   const resetView = useCallback(() => {
     setZoom(1);
@@ -106,11 +107,13 @@ export function ImageLightbox({ src, alt = "Image preview", open, onClose, label
     if (zoom <= 1) return;
     e.preventDefault();
     setDragging(true);
+    didDragRef.current = false;
     setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!dragging) return;
+    didDragRef.current = true;
     setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
 
@@ -186,7 +189,7 @@ export function ImageLightbox({ src, alt = "Image preview", open, onClose, label
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onClick={(e) => { if (e.target === e.currentTarget && !dragging) onClose(); }}
+        onClick={(e) => { if (e.target === e.currentTarget && !didDragRef.current) onClose(); }}
         style={{ cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "default" }}
       >
         <img
