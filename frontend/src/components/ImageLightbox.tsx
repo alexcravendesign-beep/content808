@@ -119,6 +119,10 @@ export function ImageLightbox({ src, alt = "Image preview", open, onClose, label
 
   const handleMouseUp = () => {
     setDragging(false);
+    // Reset didDragRef after the click event fires (mouseup → click ordering)
+    // so backdrop close works again on future clicks, but the current
+    // click still sees didDragRef=true and skips the close.
+    requestAnimationFrame(() => { didDragRef.current = false; });
   };
 
   return (
