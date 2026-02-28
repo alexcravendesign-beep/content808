@@ -126,7 +126,7 @@ export function ImageLightbox({ src, alt = "Image preview", open, onClose, label
       />
 
       {/* Toolbar */}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[101] flex items-center gap-1 px-2 py-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[102] flex items-center gap-1 px-2 py-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
         <button
           onClick={handleZoomIn}
           className="p-1.5 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
@@ -202,7 +202,7 @@ export function ImageLightbox({ src, alt = "Image preview", open, onClose, label
 
       {/* Label */}
       {label && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[101] px-4 py-2 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[102] px-4 py-2 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
           <p className="text-sm text-white/80 text-center">{label}</p>
         </div>
       )}
