@@ -13,6 +13,8 @@ interface FacebookPostCardProps {
   profilePicture?: string;
   /** Compact mode for 3-column grid – smaller text, clamped content, shorter image */
   compact?: boolean;
+  /** Called when the post image is clicked (e.g. to open a lightbox) */
+  onImageClick?: (src: string) => void;
 }
 
 function renderContentWithHashtags(text: string) {
@@ -37,6 +39,7 @@ export function FacebookPostCard({
   pageName,
   profilePicture,
   compact = false,
+  onImageClick,
 }: FacebookPostCardProps) {
   const formattedDate = (() => {
     try {
@@ -85,11 +88,14 @@ export function FacebookPostCard({
 
       {/* Post Image */}
       {image && (
-        <div className="w-full">
+        <div
+          className={`w-full ${onImageClick ? "cursor-pointer" : ""}`}
+          onClick={() => onImageClick?.(image)}
+        >
           <img
             src={image}
             alt="Post image"
-            className={`w-full object-cover ${compact ? "max-h-[180px]" : "max-h-[600px]"}`}
+            className={`w-full object-cover ${compact ? "max-h-[180px]" : "max-h-[600px]"} ${onImageClick ? "hover:scale-[1.02] transition-transform duration-200" : ""}`}
             loading="lazy"
           />
         </div>

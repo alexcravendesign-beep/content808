@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { api, ContentItem, ContentItemOutput } from "@/api/client";
 import { productApi, Product, MockFacebookPostRecord, PostComment } from "@/api/productApi";
@@ -39,6 +40,8 @@ export function ContentPage() {
   const [facebookPosts, setFacebookPosts] = useState<MockFacebookPostRecord[]>([]);
   const [deletingOutputId, setDeletingOutputId] = useState<string | null>(null);
   const [copiedUrlId, setCopiedUrlId] = useState<string | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxLabel, setLightboxLabel] = useState<string | undefined>(undefined);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -332,11 +335,14 @@ export function ContentPage() {
                         <div key={post.id} className="bg-[hsl(var(--th-input)/0.5)] rounded-lg border border-[hsl(var(--th-border))] flex flex-col overflow-hidden">
                           {/* Thumbnail */}
                           {post.image ? (
-                            <div className="relative aspect-[4/3] overflow-hidden bg-[hsl(var(--th-surface))]">
+                            <div
+                              className="relative aspect-[4/3] overflow-hidden bg-[hsl(var(--th-surface))] cursor-pointer"
+                              onClick={() => { setLightboxSrc(post.image!); setLightboxLabel("Facebook Post"); }}
+                            >
                               <img
                                 src={post.image}
                                 alt="Post image"
-                                className="h-full w-full object-cover"
+                                className="h-full w-full object-cover hover:scale-105 transition-transform duration-200"
                                 loading="lazy"
                               />
                               {/* Status badge overlay */}
@@ -483,8 +489,12 @@ export function ContentPage() {
                   const url = String(o.output_data?.url || o.output_data?.image_url || "");
                   const outputType = o.output_type.replace(/_/g, " ");
                   return (
-                    <div key={o.id} className="group relative aspect-square rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] overflow-hidden">
-                      <img src={url} alt={outputType} className="h-full w-full object-cover" loading="lazy" />
+                    <div
+                      key={o.id}
+                      className="group relative aspect-square rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] overflow-hidden cursor-pointer"
+                      onClick={() => { setLightboxSrc(url); setLightboxLabel(outputType); }}
+                    >
+                      <img src={url} alt={outputType} className="h-full w-full object-cover hover:scale-105 transition-transform duration-200" loading="lazy" />
                       {/* Hover overlay */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                         <div className="absolute bottom-0 left-0 right-0 p-2.5">
@@ -569,8 +579,9 @@ export function ContentPage() {
                     <img
                       src={outputUrl}
                       alt={`${o.output_type} preview`}
-                      className="w-full max-w-sm rounded-md border border-[hsl(var(--th-border))] object-cover"
+                      className="w-full max-w-sm rounded-md border border-[hsl(var(--th-border))] object-cover cursor-pointer hover:opacity-90 transition-opacity"
                       loading="lazy"
+                      onClick={() => { setLightboxSrc(outputUrl); setLightboxLabel(o.output_type.replace(/_/g, ' ')); }}
                     />
                     {typeof cleanOutputData?.prompt === "string" && (
                       <details className="text-xs text-[hsl(var(--th-text-muted))]">
@@ -603,6 +614,14 @@ export function ContentPage() {
           })}
         </div>
       </div>
+
+      {/* Image Lightbox */}
+      <ImageLightbox
+        src={lightboxSrc || ""}
+        open={!!lightboxSrc}
+        onClose={() => setLightboxSrc(null)}
+        label={lightboxLabel}
+      />
 
       {/* Back to item link */}
       <div className="mb-8">

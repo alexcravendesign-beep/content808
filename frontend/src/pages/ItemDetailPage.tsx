@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { api, ContentItem, ContentComment, AuditEntry, ContentItemOutput } from "@/api/client";
 import { productApi, Product, MockFacebookPostRecord } from "@/api/productApi";
@@ -45,6 +46,8 @@ export function ItemDetailPage() {
   const [copiedUrlId, setCopiedUrlId] = useState<string | null>(null);
   const [genOpen, setGenOpen] = useState(false);
   const genRef = useRef<HTMLDivElement>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxLabel, setLightboxLabel] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const t = searchParams.get("tab");
@@ -425,6 +428,7 @@ export function ItemDetailPage() {
                           createdAt={post.created_at}
                           pageName={post.page_name || "Page"}
                           profilePicture={post.page_profile_picture || undefined}
+                          onImageClick={(src) => { setLightboxSrc(src); setLightboxLabel("Facebook Post"); }}
                         />
                       ))}
                     </div>
@@ -476,8 +480,9 @@ export function ItemDetailPage() {
                         <img
                           src={outputUrl}
                           alt={`${o.output_type} preview`}
-                          className="w-full max-w-sm rounded-md border border-[hsl(var(--th-border))] object-cover"
+                          className="w-full max-w-sm rounded-md border border-[hsl(var(--th-border))] object-cover cursor-pointer hover:opacity-90 transition-opacity"
                           loading="lazy"
+                          onClick={() => { setLightboxSrc(outputUrl); setLightboxLabel(o.output_type.replace(/_/g, ' ')); }}
                         />
                         {typeof cleanOutputData?.prompt === 'string' && (
                           <details className="text-xs text-[hsl(var(--th-text-muted))]">
@@ -512,6 +517,14 @@ export function ItemDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Image Lightbox */}
+      <ImageLightbox
+        src={lightboxSrc || ""}
+        open={!!lightboxSrc}
+        onClose={() => setLightboxSrc(null)}
+        label={lightboxLabel}
+      />
 
       <ItemFormModal open={editOpen} onClose={() => setEditOpen(false)} onSaved={fetchItem} item={item} />
 

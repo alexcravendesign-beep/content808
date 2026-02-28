@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, DragEvent } from "react";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { useSearchParams } from "react-router-dom";
 import { api, ContentItemOutput, ProductAsset } from "@/api/client";
 import { productApi, Product, MockFacebookPostRecord } from "@/api/productApi";
@@ -35,6 +36,10 @@ export function MediaLibraryPage() {
 
   // Copy state
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Lightbox state
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxLabel, setLightboxLabel] = useState<string | undefined>(undefined);
 
   // Load product from URL query param on mount
   useEffect(() => {
@@ -354,8 +359,12 @@ export function MediaLibraryPage() {
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 {assets.map((asset) => (
-                  <div key={asset.id} className="group relative aspect-square rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] overflow-hidden">
-                    <img src={asset.url} alt={asset.label} className="h-full w-full object-cover" loading="lazy" />
+                  <div
+                    key={asset.id}
+                    className="group relative aspect-square rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] overflow-hidden cursor-pointer"
+                    onClick={() => { setLightboxSrc(asset.url); setLightboxLabel(asset.label); }}
+                  >
+                    <img src={asset.url} alt={asset.label} className="h-full w-full object-cover hover:scale-105 transition-transform duration-200" loading="lazy" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                       <div className="absolute bottom-0 left-0 right-0 p-3">
                         <p className="text-[10px] text-white/80 truncate">{asset.label}</p>
@@ -385,9 +394,13 @@ export function MediaLibraryPage() {
                   const url = String(output.output_data?.url || "");
                   const outputType = output.output_type.replace(/_/g, " ");
                   return (
-                    <div key={output.id} className="group relative aspect-square rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] overflow-hidden">
+                    <div
+                      key={output.id}
+                      className="group relative aspect-square rounded-xl border border-[hsl(var(--th-border))] bg-[hsl(var(--th-surface))] overflow-hidden cursor-pointer"
+                      onClick={() => { if (url) { setLightboxSrc(url); setLightboxLabel(outputType); } }}
+                    >
                       {url ? (
-                        <img src={url} alt={outputType} className="h-full w-full object-cover" loading="lazy" />
+                        <img src={url} alt={outputType} className="h-full w-full object-cover hover:scale-105 transition-transform duration-200" loading="lazy" />
                       ) : (
                         <div className="h-full w-full flex items-center justify-center bg-[hsl(var(--th-input))]">
                           <Image className="h-8 w-8 text-[hsl(var(--th-text-muted))]" />
@@ -435,6 +448,7 @@ export function MediaLibraryPage() {
                       createdAt={post.created_at}
                       pageName={post.page_name || "Facebook Page"}
                       profilePicture={post.page_profile_picture || undefined}
+                      onImageClick={(src) => { setLightboxSrc(src); setLightboxLabel("Facebook Post"); }}
                     />
                     {/* Quick copy button for post content */}
                     <button
@@ -510,6 +524,14 @@ export function MediaLibraryPage() {
               </div>
             </section>
           )}
+
+          {/* Image Lightbox */}
+          <ImageLightbox
+            src={lightboxSrc || ""}
+            open={!!lightboxSrc}
+            onClose={() => setLightboxSrc(null)}
+            label={lightboxLabel}
+          />
 
           {/* Empty state when product has no outputs */}
           {imageOutputs.length === 0 && facebookPosts.length === 0 && copyOutputs.length === 0 && hashtagOutputs.length === 0 && assets.length === 0 && (
