@@ -185,6 +185,7 @@ export function ImageLightbox({ src, alt = "Image preview", open, onClose, label
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onClick={(e) => { if (e.target === e.currentTarget && !dragging) onClose(); }}
         style={{ cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "default" }}
       >
         <img
